@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Bus;
 use App\Jobs\StoreMovieJob;
+use App\Models\Movie;
 
 #[Signature('app:import-movies-t-m-d-b')]
 #[Description('Command description')]
@@ -23,30 +24,41 @@ class ImportMoviesTMDB extends Command
     public function handle()
     {
         $limit = $this->argument('limit');
-        $this->info("Iniciando busca de {$limit} filmes no TMDB...");
+        $pages = round($limit / 20);
+        $total = $pages * 20;
+        $tmdb_api_key = config('services.tmdb.key');
+
+        $this->info("Iniciando busca de {$total} filmes no TMDB. Páginas: {$pages}");
 
         // 1. Requisição ao TMDB (Exemplo pegando os mais populares)
-        $response = Http::get('https://api.themoviedb.org/3/movie/popular', [
-            'api_key' => config('services.tmdb.key'),
-            'language' => 'pt-BR',
-        ]);
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$tmdb_api_key}",
+            'accept' => 'application/json',
+        ])->get('https://api.themoviedb.org/3/movie/popular?&page=');
 
         if ($response->failed()) {
             $this->error('Falha ao conectar com o TMDB');
             return;
         }
 
-        $movies = collect($response->json()['results'])->take($limit);
-
+        $movies = $response->json()['results'];
         // 2. Criar o Batch (Lote)
         $batch = Bus::batch([])->name('Importação Diária de Filas')->dispatch();
-
-        foreach ($movies as $movieData) {
-            // Adiciona cada filme como um Job no lote
-            $batch->add(new StoreMovieJob($movieData));
+        $index = 0;
+        foreach ($movies as $movie) {
+            // Verifica se o filme já existe
+            if (Movie::where('tmdb_id', $movie['id'])->doesntExist()) {
+                $movieData = [
+                    'tmdb_id' => $movie['id'],
+                    'poster_path_en' => $movie['poster_path'],
+                ];
+                // Adiciona cada filme como um Job no lote
+                $batch->add(new StoreMovieJob($movieData));
+                $index++;
+            }
         }
 
-        $this->info("Sucesso! {$movies->count()} filmes foram enviados para a fila.");
+        $this->info("Sucesso! {$index} filmes não repetidos foram enviados para a fila.");
         $this->info("Use 'php artisan queue:work' para começar o processamento.");
     }
 }
