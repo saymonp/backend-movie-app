@@ -38,8 +38,11 @@ CREATE INDEX idx_movies_titulo_en ON movies(titulo_en);
 
 CREATE TABLE generos (
     id SERIAL PRIMARY KEY,
-    nome TEXT UNIQUE
+    tmdb_id INTEGER UNIQUE NOT NULL,
+    nome_pt TEXT UNIQUE,
+    nome_en TEXT UNIQUE
 );
+
 
 CREATE TABLE movie_generos (
     movie_id INTEGER REFERENCES movies(id) ON DELETE CASCADE,
