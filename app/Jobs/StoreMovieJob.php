@@ -98,6 +98,16 @@ class StoreMovieJob implements ShouldQueue
 
             ProcessMovieImagesJob::dispatch($movie, $imageUrls)->onQueue('images');
         }
+
+        // 4. Tradução (Se não tem descrição em PT, mas tem em EN)
+        if (!filled($validated['descricao_br']) && filled($validated['descricao_en'])) {
+
+            Log::info("Despachando tradução para o filme ID: {$movie->id}");
+
+            // Enviamos o model $movie e o texto original
+            ProcessMovieTranslationJob::dispatch($movie, $validated['descricao_en'])
+                ->onQueue('translation');
+        }
     }
 
     private function syncRelations($movie, $relation, $modelClass, $names)
