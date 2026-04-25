@@ -29,7 +29,7 @@ class Movie extends Model
         'lingua_origem',
         'poster_path_br',
         'poster_thumb_br',
-        'backdrop_path_br',
+        'backdrop_path',
         'poster_path_us',
         'poster_thumb_us',
         'backdrop_path_us',

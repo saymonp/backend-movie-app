@@ -16,7 +16,7 @@ class Genero extends Model
     // Por padrão o Laravel usa created_at e updated_at. 
     // desabilitar o updated_at automático.
 
-    protected $fillable = ['nome'];
+    protected $fillable = ['tmdb_id', 'nome_pt', 'nome_en'];
 
     public function movies(): BelongsToMany
     {

@@ -13,10 +13,11 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Bus\Batchable;
 
 class StoreMovieJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Batchable, Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
      * Create a new job instance.
@@ -31,7 +32,9 @@ class StoreMovieJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $movieResponse = $this->getMovieDetails($this->data['tmdb_id'], $this->data['poster_path'], $this->data['generos_en']);
+        $movieResponse = $this->getMovieDetails($this->data['tmdb_id'], $this->data['poster_path_en'], $this->data['generos_en']);
+
+        dump($movieResponse);
 
         $validator = Validator::make($movieResponse ?? [], [
             'tmdb_id'           => 'required|integer|unique:movies,tmdb_id',
@@ -49,22 +52,21 @@ class StoreMovieJob implements ShouldQueue
             'lingua_origem'     => 'required|string|max:5',
             'release_date'      => 'required|date',
             'homepage'          => 'nullable|url',
-            'poster_br'         => 'required|url',
-            'poster_br_thumb'   => 'required|url',
-            'backdrop_br'       => 'required|url',
-            'poster_en'         => 'required|url',
-            'poster_en_thumb'   => 'required|url',
-            'generos_pt'        => 'required|array',
-            'generos_en'        => 'required|array',
-            'diretor'           => 'required|array',
-            'estudios'          => 'required|array',
-            'paises'            => 'required|array',
+            'poster_path_br'         => 'nullable|url',
+            'poster_thumb_br'   => 'nullable|url',
+            'backdrop_path'       => 'nullable|url',
+            'poster_path_us'         => 'nullable|url',
+            'poster_thumb_us'   => 'nullable|url',
+            'generos'        => 'required|array',
+            'diretores'           => 'nullable|array',
+            'estudios'          => 'nullable|array',
+            'paises'            => 'nullable|array',
             'colecao'           => 'nullable|array',
-            'colecao.name'      => 'required_with:colecao|string',
+            'colecao.nome'      => 'required_with:colecao|string',
             'colecao.tmdb_id'   => 'required_with:colecao|integer',
-            'colecao.poster_path' => 'required_with:colecao|string',
-            'colecao.poster_thumb' => 'required_with:colecao|string',
-            'colecao.backdrop_path' => 'required_with:colecao|string'
+            'colecao.poster_path' => 'nullable|string',
+            'colecao.poster_thumb' => 'nullable|string',
+            'colecao.backdrop_path' => 'nullable|string'
         ]);
 
         if ($validator->fails()) {
@@ -80,18 +82,59 @@ class StoreMovieJob implements ShouldQueue
             $movie = Movie::create($validated);
 
             // 3. Processar Relacionamentos (Usando método auxiliar para evitar repetição)
-            $movie->syncRelations($movie, 'generos', \App\Models\Genero::class, $validated['generos_pt']);
-            $movie->syncRelations($movie, 'generos', \App\Models\Genero::class, $validated['generos_en']);
-            $movie->syncRelations($movie, 'diretores', \App\Models\Diretor::class, $validated['diretor']);
-            $movie->syncRelations($movie, 'estudios', \App\Models\Estudio::class, $validated['estudios']);
-            $movie->syncRelations($movie, 'paises', \App\Models\Pais::class, $validated['paises']);
-            
+            // TODO passar estes métodos para o Model
+            $this->syncRelationsGeneros($movie, 'generos', \App\Models\Genero::class, $validated['generos']);
+            $this->syncRelations($movie, 'diretores', \App\Models\Diretor::class, $validated['diretores']);
+            $this->syncRelations($movie, 'estudios', \App\Models\Estudio::class, $validated['estudios']);
+            $this->syncRelations($movie, 'paises', \App\Models\Pais::class, $validated['paises']);
+
             // 3. Despacha o processamento de imagens
             $imageUrls = $this->createImageArray($validated);
-            ProcessMovieImagesJob::dispatch($movie, $imageUrls);
+            // TODO ProcessMovieImagesJob::dispatch($movie, $imageUrls);
         });
     }
 
+
+    private function syncRelations($model, $relation, $relatedModel, $names)
+    {
+        if (empty($names)) return;
+
+        // 1. Busca todos que já existem de uma vez só
+        $existing = $relatedModel::whereIn('nome', $names)->get();
+
+        // 2. Identifica o que precisa ser criado
+        $existingNames = $existing->pluck('nome')->toArray();
+        $newNames = array_diff($names, $existingNames);
+
+        $newIds = [];
+        foreach ($newNames as $name) {
+            $newIds[] = $relatedModel::create(['nome' => $name])->id;
+        }
+
+        // 3. Junta os IDs existentes com os novos e sincroniza
+        $allIds = $existing->pluck('id')->merge($newIds);
+        $model->$relation()->sync($allIds);
+    }
+
+    private function syncRelationsGeneros($model, $relation, $relatedModel, $items)
+    {
+        if (empty($items)) return;
+
+        $ids = collect($items)->map(function ($item) use ($relatedModel) {
+
+            $registro = $relatedModel::updateOrCreate(
+                ['tmdb_id' => $item['tmdb_id']],
+                [
+                    'nome_pt' => $item['nome_pt'],
+                    'nome_en' => $item['nome_en'],
+                ]
+            );
+
+            return $registro->id;
+        })->all();
+
+        $model->$relation()->sync($ids);
+    }
     public function failed(\Throwable $exception)
     {
         Log::error("Erro ao criar filme TMDB ID {$this->data['tmdb_id']}: " . $exception->getMessage());
@@ -102,7 +145,7 @@ class StoreMovieJob implements ShouldQueue
         $imagesArray = [
             $dataValidated['poster_path_br'],
             $dataValidated['poster_thumb_br'],
-            $dataValidated['backdrop_path_br'],
+            $dataValidated['backdrop_path'],
             $dataValidated['poster_path_us'],
             $dataValidated['poster_thumb_us'],
             'colecao' => [
@@ -114,10 +157,22 @@ class StoreMovieJob implements ShouldQueue
         return $imagesArray;
     }
 
-    function createSlug($titulo_br, $titulo_en, $data)
+    function createSlug($titulo_br, $titulo_en, $releaseDate)
     {
+        // Normaliza (null, vazio, espaços)
+        $titulo_br = is_string($titulo_br) && trim($titulo_br) !== '' ? $titulo_br : null;
+        $titulo_en = is_string($titulo_en) && trim($titulo_en) !== '' ? $titulo_en : null;
+
         $slug_pt = $titulo_br ? Str::slug($titulo_br) : null;
         $slug_en = $titulo_en ? Str::slug($titulo_en) : null;
+
+        // Se não tem slug_en, não faz sentido continuar
+        if (!$slug_en) {
+            return [
+                'slug_pt' => $slug_pt,
+                'slug_en' => null,
+            ];
+        }
 
         // Verifica se já existe no banco
         $exists = Movie::where('slug_en', $slug_en)->exists();
@@ -129,8 +184,13 @@ class StoreMovieJob implements ShouldQueue
             ];
         }
 
-        // Se já existe, adiciona ano ou número aleatório
-        $year = $data ? explode('-', $data)[0] : rand(1, 999);
+        // Ano (mais seguro)
+        $year = null;
+        if (!empty($releaseDate) && str_contains($releaseDate, '-')) {
+            $year = explode('-', $releaseDate)[0];
+        }
+
+        $year = $year ?: rand(1, 999);
 
         return [
             'slug_pt' => $slug_pt ? "{$slug_pt}-{$year}" : null,
@@ -179,9 +239,10 @@ class StoreMovieJob implements ShouldQueue
 
         // 🎯 Slug
         $slug = $this->createSlug(
-            $ptBR['data']['title'] ?? null,
-            $enUS['data']['title'] ?? $data['original_title'] ?? null,
-            $data['release_date'] ?? null
+            filled($ptBR['data']['title']) ? $ptBR['data']['title'] : null,
+            filled($enUS['data']['title']) ? $enUS['data']['title'] : $data['original_title'],
+            $data['release_date'] ?? null,
+            $data['id']
         );
 
         return [
@@ -202,14 +263,27 @@ class StoreMovieJob implements ShouldQueue
             'rating' => $data['vote_average'] ?? null,
             'duracao' => $data['runtime'] ?? null,
 
-            'generos_pt' => array_column($data['genres'], 'name') ?? [],
-            'generos_en' => $generos_en ?? [],
+            //'generos_pt' => array_map(fn($g) => ['tmdb_id' => $g['id'], 'nome' => $g['name']], array_values($data['genres'])) ?? [],
+            //'generos_en' => $generos_en ?? [],
+
+            'generos' => collect($data['genres'])
+                ->map(function ($itemPt) use ($generos_en) {
+                    // Transformamos em collection para usar o firstWhere
+                    $itemEn = collect($generos_en)->firstWhere('id', $itemPt['id']);
+
+                    return [
+                        'tmdb_id' => $itemPt['id'],
+                        'nome_pt' => $itemPt['name'],
+                        // Busca o nome no itemEn, se não achar (fallback), usa o nome_pt
+                        'nome_en' => $itemEn['name'] ?? ($itemEn['nome'] ?? $itemPt['name']),
+                    ];
+                })->all(),
 
             'pais_origem' => isset($data['origin_country']) ? $data['origin_country'] : null,
 
             'lingua_origem' => $data['original_language'] ?? null,
 
-            'estudio' => array_column($data['production_companies'], 'name') ?? [],
+            'estudios' => array_column($data['production_companies'], 'name') ?? [],
             // URLs temporárias do TMBb
             'poster_path_br' => isset($data['poster_path'])
                 ? "https://image.tmdb.org/t/p/original{$data['poster_path']}"
@@ -218,7 +292,7 @@ class StoreMovieJob implements ShouldQueue
                 ? "https://image.tmdb.org/t/p/w500{$data['poster_path']}"
                 : null,
 
-            'backdrop_path_br' => isset($data['backdrop_path'])
+            'backdrop_path' => isset($data['backdrop_path'])
                 ? "https://image.tmdb.org/t/p/w500{$data['backdrop_path']}"
                 : null,
 
@@ -229,10 +303,14 @@ class StoreMovieJob implements ShouldQueue
                 ? "https://image.tmdb.org/t/p/original{$poster_path_en}"
                 : null,
 
-            'diretor' => collect($data['credits']['crew'] ?? [])
+            'diretores' => collect($data['credits']['crew'] ?? [])
                 ->where('job', 'Director')
                 ->pluck('name')
                 ->all(),
+
+            'paises' => isset($data['production_countries'])
+                ? array_column($data['production_countries'], 'name')
+                : [],
 
             'homepage' => $data['homepage'] ?? null,
 
@@ -243,13 +321,19 @@ class StoreMovieJob implements ShouldQueue
             'slug_pt' => $slug['slug_pt'],
             'slug_en' => $slug['slug_en'],
 
-            'colecao' => [
-                'tmdb_id' => isset($data['colecao']['id']) ? $data['colecao']['poster_path'] : null,
-                'nome' => isset($data['colecao']['name']) ? $data['colecao']['poster_path'] : null,
-                'poster_path' => isset($data['colecao']['poster_path']) ? $data['colecao']['poster_path'] : null,
-                'poster_thumb' => isset($data['colecao']['poster_thumb']) ? $data['colecao']['poster_path'] : null,
-                'backdrop_path' => isset($data['colecao']['backdrop_path']) ? $data['colecao']['backdrop_path'] : null
-            ]
+            'colecao' => filled($data['belongs_to_collection'] ?? null) ? [
+                'tmdb_id'       => $data['belongs_to_collection']['id'] ?? null,
+                'nome'          => $data['belongs_to_collection']['name'] ?? null,
+                'poster_path'   => isset($data['belongs_to_collection']['poster_path'])
+                    ? "https://image.tmdb.org/t/p/original{$data['belongs_to_collection']['poster_path']}"
+                    : null,
+                'poster_thumb'  => isset($data['belongs_to_collection']['poster_path'])
+                    ? "https://image.tmdb.org/t/p/w500{$data['belongs_to_collection']['poster_path']}"
+                    : null,
+                'backdrop_path' => isset($data['belongs_to_collection']['backdrop_path'])
+                    ? "https://image.tmdb.org/t/p/original{$data['belongs_to_collection']['backdrop_path']}"
+                    : null,
+            ] : null,
         ];
     }
 }

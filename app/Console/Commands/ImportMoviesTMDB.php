@@ -11,8 +11,7 @@ use App\Jobs\StoreMovieJob;
 use App\Models\Movie;
 use Illuminate\Support\Facades\Cache;
 
-#[Signature('app:import-movies-t-m-d-b')]
-#[Description('Command description')]
+
 class ImportMoviesTMDB extends Command
 {
     // O nome que você usará no terminal
@@ -32,12 +31,14 @@ class ImportMoviesTMDB extends Command
         $this->info("Iniciando busca de {$total} filmes no TMDB. Páginas: {$pages}");
 
         // Pega lista de IDs de genêros para obter os gêneros em inglês.
-        // Cache 24hx7
-        $genresEn = Cache::remember('tmdb_genres_en', 604.800, function () {
-            return Http::withToken(config('services.tmdb.key'))
-                ->get('https://api.themoviedb.org/3/genre/movie/list?language=en-US')
-                ->json()['genres'];
+        // Cache por 1 semana
+        $genresEn = Cache::remember('tmdb_genres_en', now()->addWeek(), function () use ($tmdb_api_key) {
+            $response = Http::withToken($tmdb_api_key)
+                ->get('https://api.themoviedb.org/3/genre/movie/list?language=en-US');
+            return $response->json()['genres'] ?? [];
         });
+
+        $totalIndex = 0;
 
         // 1. Requisição ao TMDB (Exemplo pegando os mais populares)
         for ($page = 1; $page <= $pages; $page++) {
@@ -55,23 +56,27 @@ class ImportMoviesTMDB extends Command
             $movies = $response->json()['results'];
             // 2. Criar o Batch (Lote)
             $batch = Bus::batch([])->name("Importação Diária de Filas, página {$page} de {$pages}")->dispatch();
-            $index = 0;
+
             foreach ($movies as $movie) {
                 // Verifica se o filme já existe
                 if (Movie::where('tmdb_id', $movie['id'])->doesntExist()) {
+                    $movieGenresEn = collect($genresEn)
+                        ->whereIn('id', $movie['genre_ids'])
+                        ->map(fn($g) => ['id' => $g['id'], 'name' => $g['name']])
+                        ->toArray();
+
                     $movieData = [
                         'tmdb_id' => $movie['id'],
                         'poster_path_en' => $movie['poster_path'],
-                        'generos_en' => array_values(array_intersect_key(array_column($genresEn['genres'], 'name', 'id'), array_flip($movie['genre_ids'])))
-
+                        'generos_en' => $movieGenresEn
                     ];
                     // Adiciona cada filme como um Job no lote
                     $batch->add(new StoreMovieJob($movieData));
-                    $index++;
+                    $totalIndex++;
                 }
             }
         }
-        $this->info("Sucesso! {$index} filmes inéditos foram enviados para a fila.");
+        $this->info("Sucesso! {$totalIndex} filmes inéditos foram enviados para a fila.");
         $this->info("Use 'php artisan queue:work' para começar o processamento.");
     }
 }
