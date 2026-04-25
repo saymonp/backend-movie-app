@@ -12,14 +12,15 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Validator;
 
 class ProcessMovieImagesJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, InteractsWithQueue;
 
     // Tenta 3 vezes antes de marcar como falha definitiva
     public $tries = 3;
-    
+
     // Aguarda 60 segundos entre as tentativas
     public $backoff = 60;
 
@@ -36,15 +37,31 @@ class ProcessMovieImagesJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $imageMapping = [
-            'poster_br' => 'poster_path_br',
-            'backdrop_br' => 'backdrop_path_br',
-            // ... outros campos
-        ];
+        $validator = Validator::make($this->imageUrls ?? [], [
+            'poster_path_br'    => 'nullable|url',
+            'poster_thumb_br'   => 'nullable|url',
+            'backdrop_path'     => 'nullable|url',
+            'poster_path_us'    => 'nullable|url',
+            'poster_thumb_us'   => 'nullable|url',
+
+            'colecao'           => 'nullable|array',
+            'colecao.nome'      => 'required_with:colecao|string',
+            'colecao.tmdb_id'   => 'required_with:colecao|integer',
+            'colecao.poster_path' => 'nullable|string',
+            'colecao.poster_thumb' => 'nullable|string',
+            'colecao.backdrop_path' => 'nullable|string'
+        ]);
+
+        if ($validator->fails()) {
+            $this->failed(throw new \Exception($validator->errors()->first()));
+            return;
+        }
+
+        $validated = $validator->validated();
 
         $updates = [];
 
-        foreach ($imageMapping as $reqKey => $dbCol) {
+        foreach ($validated as $reqKey => $dbCol) {
             $url = $this->imageUrls[$reqKey];
             $response = Http::timeout(30)->get($url);
 
@@ -64,6 +81,6 @@ class ProcessMovieImagesJob implements ShouldQueue
     public function failed(\Throwable $exception)
     {
         // Aqui reportamos o erro final no log após as 3 tentativas
-        Log::critical("ERRO CRÍTICO: Imagens do filme ID {$this->movie->id} não puderam ser salvas após todas as tentativas.");
+        Log::critical("ERRO CRÍTICO: Imagens do filme ID {$this->movie->id} não puderam ser salvas após todas as tentativas. {$exception}");
     }
 }
