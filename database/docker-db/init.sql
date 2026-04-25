@@ -21,12 +21,11 @@ CREATE TABLE movies (
     -- Imagens BR
     poster_path_br TEXT,      -- Original/High
     poster_thumb_br TEXT,     -- Otimizada 
-    backdrop_path_br TEXT,    -- Original/High
+    backdrop_path TEXT,    -- Original/High
     
     -- Imagens US
     poster_path_us TEXT,      -- Original/High
     poster_thumb_us TEXT,     -- Otimizada
-    backdrop_path_us TEXT,    -- Original/High
 
     homepage TEXT,
 
