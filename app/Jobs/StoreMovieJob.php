@@ -90,7 +90,7 @@ class StoreMovieJob implements ShouldQueue
 
             // 3. Despacha o processamento de imagens
             $imageUrls = $this->createImageArray($validated);
-            // TODO ProcessMovieImagesJob::dispatch($movie, $imageUrls);
+            ProcessMovieImagesJob::dispatch($movie, $imageUrls)->onQueue('images');
         });
     }
 
@@ -144,11 +144,11 @@ class StoreMovieJob implements ShouldQueue
             $dataValidated['backdrop_path'],
             $dataValidated['poster_path_us'],
             $dataValidated['poster_thumb_us'],
-            'colecao' => [
+            'colecao' => filled($data['belongs_to_collection'] ?? null) ? [
                 'poster_path' => isset($dataValidated['colecao']['poster_path']) ?? null,
                 'poster_thumb' => isset($dataValidated['colecao']['poster_thumb']) ?? null,
                 'backdrop_path' => isset($dataValidated['colecao']['backdrop_path']) ?? null
-            ]
+            ] : null
         ];
         return $imagesArray;
     }
