@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Bus;
 use App\Jobs\StoreMovieJob;
 use App\Models\Movie;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 
 class ImportMoviesTMDB extends Command
@@ -24,59 +25,64 @@ class ImportMoviesTMDB extends Command
     public function handle()
     {
         $limit = $this->argument('limit');
-        $pages = round($limit / 20);
-        $total = $pages * 20;
+        $pages = max(1, round($limit / 20)); // Garante pelo menos 1 página
         $tmdb_api_key = config('services.tmdb.key');
 
-        $this->info("Iniciando busca de {$total} filmes no TMDB. Páginas: {$pages}");
+        $this->info("Iniciando busca de filmes no TMDB. Páginas: {$pages}");
 
-        // Pega lista de IDs de genêros para obter os gêneros em inglês.
-        // Cache por 1 semana
+        // Cache de gêneros (Perfeito!)
         $genresEn = Cache::remember('tmdb_genres_en', now()->addWeek(), function () use ($tmdb_api_key) {
             $response = Http::withToken($tmdb_api_key)
                 ->get('https://api.themoviedb.org/3/genre/movie/list?language=en-US');
             return $response->json()['genres'] ?? [];
         });
 
-        $totalIndex = 0;
+        $jobs = []; // Vamos guardar todos os jobs aqui antes de disparar o lote
 
-        // 1. Requisição ao TMDB (Exemplo pegando os mais populares)
         for ($page = 1; $page <= $pages; $page++) {
             $this->comment("Buscando página {$page}...");
+
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$tmdb_api_key}",
                 'accept' => 'application/json',
             ])->get("https://api.themoviedb.org/3/movie/popular?&page={$page}");
 
-            if ($response->failed()) {
-                $this->error('Falha ao conectar com o TMDB');
-                return;
-            }
+            if ($response->failed()) continue;
 
-            $movies = $response->json()['results'];
-            // 2. Criar o Batch (Lote)
-            $batch = Bus::batch([])->name("Importação Diária de Filas, página {$page} de {$pages}")->dispatch();
+            $movies = $response->json()['results'] ?? [];
 
             foreach ($movies as $movie) {
-                // Verifica se o filme já existe
                 if (Movie::where('tmdb_id', $movie['id'])->doesntExist()) {
                     $movieGenresEn = collect($genresEn)
                         ->whereIn('id', $movie['genre_ids'])
                         ->map(fn($g) => ['id' => $g['id'], 'name' => $g['name']])
                         ->toArray();
 
-                    $movieData = [
+                    $jobs[] = new StoreMovieJob([
                         'tmdb_id' => $movie['id'],
                         'poster_path_en' => $movie['poster_path'],
                         'generos_en' => $movieGenresEn
-                    ];
-                    // Adiciona cada filme como um Job no lote
-                    $batch->add(new StoreMovieJob($movieData));
-                    $totalIndex++;
+                    ]);
                 }
             }
         }
-        $this->info("Sucesso! {$totalIndex} filmes inéditos foram enviados para a fila.");
-        $this->info("Use 'php artisan queue:work' para começar o processamento.");
+
+        if (count($jobs) > 0) {
+            // CRIA UM ÚNICO LOTE PARA TUDO
+            Bus::batch($jobs)
+                ->name("Importação Massiva TMDB - " . now()->format('d/m/Y'))
+                ->then(function ($batch) {
+                    // Esse Log só aparece quando os 20, 40 ou 100 filmes terminarem
+                    Log::info("✅ Importação de Filmes Concluída! Fila de imagens liberada.");
+                })
+                ->catch(function ($batch, $e) {
+                    Log::error("❌ Erro no lote de importação: " . $e->getMessage());
+                })
+                ->dispatch();
+
+            $this->info("Sucesso! " . count($jobs) . " filmes enviados para a fila.");
+        } else {
+            $this->warn("Nenhum filme novo encontrado para importar.");
+        }
     }
 }

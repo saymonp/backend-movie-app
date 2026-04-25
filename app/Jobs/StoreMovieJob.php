@@ -38,6 +38,7 @@ class StoreMovieJob implements ShouldQueue
         if (!$movieResponse) {
             return;
         }
+        //Log::info('Movie response:', $movieResponse);
 
         // 2. Validação
         $validator = Validator::make($movieResponse, [
@@ -78,18 +79,25 @@ class StoreMovieJob implements ShouldQueue
         $validated = $validator->validated();
 
         // 3. Persistência
-        DB::transaction(function () use ($validated) {
-            $movie = Movie::create($validated);
+        $movie = DB::transaction(function () use ($validated) {
+            $movieCreated = Movie::create($validated);
 
-            $this->syncRelationsGeneros($movie, 'generos', \App\Models\Genero::class, $validated['generos']);
-            $this->syncRelations($movie, 'diretores', \App\Models\Diretor::class, $validated['diretores'] ?? []);
-            $this->syncRelations($movie, 'estudios', \App\Models\Estudio::class, $validated['estudios'] ?? []);
-            $this->syncRelations($movie, 'paises', \App\Models\Pais::class, $validated['paises'] ?? []);
+            $this->syncRelationsGeneros($movieCreated, 'generos', \App\Models\Genero::class, $validated['generos']);
+            $this->syncRelations($movieCreated, 'diretores', \App\Models\Diretor::class, $validated['diretores'] ?? []);
+            $this->syncRelations($movieCreated, 'estudios', \App\Models\Estudio::class, $validated['estudios'] ?? []);
+            $this->syncRelations($movieCreated, 'paises', \App\Models\Pais::class, $validated['paises'] ?? []);
 
-            // 4. Imagens
-            $imageUrls = $this->createImageArray($validated);
-            ProcessMovieImagesJob::dispatch($movie, $imageUrls)->onQueue('images');
+            return $movieCreated;
         });
+
+        Log::info('Movie criado?', ['movie' => $movie]);
+        if ($movie) {
+            $imageUrls = $this->createImageArray($validated);
+
+            Log::info("Despachando imagens para o filme ID: {$movie->id}");
+
+            ProcessMovieImagesJob::dispatch($movie, $imageUrls)->onQueue('images');
+        }
     }
 
     private function syncRelations($movie, $relation, $modelClass, $names)
@@ -140,18 +148,38 @@ class StoreMovieJob implements ShouldQueue
 
     function createSlug($titulo_br, $titulo_en, $releaseDate)
     {
-        $titulo_br = filled($titulo_br) ? $titulo_br : null;
-        $titulo_en = filled($titulo_en) ? $titulo_en : null;
+        // Normaliza (null, vazio, espaços)
+        $titulo_br = is_string($titulo_br) && trim($titulo_br) !== '' ? $titulo_br : null;
+        $titulo_en = is_string($titulo_en) && trim($titulo_en) !== '' ? $titulo_en : null;
 
         $slug_pt = $titulo_br ? Str::slug($titulo_br) : null;
         $slug_en = $titulo_en ? Str::slug($titulo_en) : null;
 
-        if (!$slug_en) return ['slug_pt' => $slug_pt, 'slug_en' => null];
+        // Se não tem slug_en, não faz sentido continuar
+        if (!$slug_en) {
+            return [
+                'slug_pt' => $slug_pt,
+                'slug_en' => null,
+            ];
+        }
 
+        // Verifica se já existe no banco
         $exists = Movie::where('slug_en', $slug_en)->exists();
-        if (!$exists) return ['slug_pt' => $slug_pt, 'slug_en' => $slug_en];
 
-        $year = filled($releaseDate) ? explode('-', $releaseDate)[0] : rand(100, 999);
+        if (!$exists) {
+            return [
+                'slug_pt' => $slug_pt,
+                'slug_en' => $slug_en,
+            ];
+        }
+
+        // Ano (mais seguro)
+        $year = null;
+        if (!empty($releaseDate) && str_contains($releaseDate, '-')) {
+            $year = explode('-', $releaseDate)[0];
+        }
+
+        $year = $year ?: rand(1, 999);
 
         return [
             'slug_pt' => $slug_pt ? "{$slug_pt}-{$year}" : null,
@@ -163,7 +191,7 @@ class StoreMovieJob implements ShouldQueue
     {
         // CACHE: Guarda a resposta por 24 horas para evitar re-fazer a requisição em caso de erro no banco
         return Cache::remember("tmdb_details_{$tmdb_id}", now()->addDay(), function () use ($tmdb_id, $poster_path_en, $generos_en) {
-            
+
             $tmdb_api_key = config('services.tmdb.key');
             $url = "https://api.themoviedb.org/3/movie/{$tmdb_id}?append_to_response=translations,images,credits&include_image_language=en,pt,null&language=pt-BR";
 
@@ -180,10 +208,17 @@ class StoreMovieJob implements ShouldQueue
             $ptBR = collect($translations)->firstWhere('iso_639_1', 'pt');
             $enUS = collect($translations)->firstWhere('iso_639_1', 'en');
 
+            // 🎯 Slug
+            // 🎯 Slug
             $slug = $this->createSlug(
-                $ptBR['data']['title'] ?? $data['title'] ?? null,
-                $enUS['data']['title'] ?? $data['original_title'] ?? null,
-                $data['release_date'] ?? null
+                // Tenta pegar o título PT-BR, se não existir, usa o título padrão da resposta
+                filled($ptBR['data']['title'] ?? null) ? $ptBR['data']['title'] : ($data['title'] ?? null),
+
+                // Tenta pegar o título EN-US, se não existir, usa o original_title
+                filled($enUS['data']['title'] ?? null) ? $enUS['data']['title'] : ($data['original_title'] ?? $data['title']),
+
+                $data['release_date'] ?? null,
+                $data['id']
             );
 
             return [
@@ -200,9 +235,9 @@ class StoreMovieJob implements ShouldQueue
                 'lingua_origem'   => $data['original_language'] ?? 'en',
                 'release_date'    => $data['release_date'] ?? null,
                 'homepage'        => $data['homepage'] ?? null,
-                'slug_pt'         => $slug['slug_pt'],
-                'slug_en'         => $slug['slug_en'],
-                
+                'slug_pt' => $slug['slug_pt'],
+                'slug_en' => $slug['slug_en'],
+
                 'generos' => collect($data['genres'])->map(function ($itemPt) use ($generos_en) {
                     $itemEn = collect($generos_en)->firstWhere('id', $itemPt['id']);
                     return [

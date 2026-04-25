@@ -2,85 +2,89 @@
 
 namespace App\Jobs;
 
-use Illuminate\Support\Facades\Log;
 use App\Models\Movie;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ProcessMovieImagesJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, InteractsWithQueue;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    // Tenta 3 vezes antes de marcar como falha definitiva
     public $tries = 3;
-
-    // Aguarda 60 segundos entre as tentativas
     public $backoff = 60;
 
-    /**
-     * Create a new job instance.
-     */
     public function __construct(protected Movie $movie, protected array $imageUrls)
     {
-        //
     }
 
-    /**
-     * Execute the job.
-     */
     public function handle(): void
     {
-        $validator = Validator::make($this->imageUrls ?? [], [
-            'poster_path_br'    => 'nullable|url',
-            'poster_thumb_br'   => 'nullable|url',
-            'backdrop_path'     => 'nullable|url',
-            'poster_path_us'    => 'nullable|url',
-            'poster_thumb_us'   => 'nullable|url',
-
-            'colecao'           => 'nullable|array',
-            'colecao.nome'      => 'required_with:colecao|string',
-            'colecao.tmdb_id'   => 'required_with:colecao|integer',
-            'colecao.poster_path' => 'nullable|string',
-            'colecao.poster_thumb' => 'nullable|string',
-            'colecao.backdrop_path' => 'nullable|string'
-        ]);
-
-        if ($validator->fails()) {
-            $this->failed(throw new \Exception($validator->errors()->first()));
-            return;
-        }
-
-        $validated = $validator->validated();
+        Log::info("Iniciando processamento de imagens para o filme: {$this->movie->titulo_br} (ID: {$this->movie->id})");
 
         $updates = [];
 
-        foreach ($validated as $reqKey => $dbCol) {
-            $url = $this->imageUrls[$reqKey];
-            $response = Http::timeout(30)->get($url);
+        // Mapeamos as chaves que vem do Job para as colunas do seu banco
+        $map = [
+            'poster_path_br'  => 'poster_path_br',
+            'poster_thumb_br' => 'poster_thumb_br',
+            'backdrop_path'   => 'backdrop_path',
+            'poster_path_us'  => 'poster_path_us',
+            'poster_thumb_us' => 'poster_thumb_us',
+        ];
 
-            if ($response->successful()) {
-                $path = "posters/" . Str::uuid() . ".jpg";
-                Storage::disk('s3')->put($path, $response->body(), 'public');
-                $updates[$dbCol] = $path;
-            } else {
-                // Se falhar o download, lançamos uma exceção para a fila tentar novamente
-                throw new \Exception("Falha ao baixar imagem: {$url}");
+        foreach ($map as $key => $column) {
+            if (empty($this->imageUrls[$key])) continue;
+
+            $url = $this->imageUrls[$key];
+            
+            try {
+                $path = $this->downloadAndStore($url);
+                if ($path) {
+                    $updates[$column] = $path;
+                }
+            } catch (\Exception $e) {
+                Log::error("Falha ao processar imagem {$key} para o filme {$this->movie->id}: " . $e->getMessage());
+                // Lançamos a exceção para o Job tentar novamente (retry)
+                throw $e;
             }
         }
 
-        $this->movie->update($updates);
+        // Se houver atualizações, salva no banco de uma vez
+        if (!empty($updates)) {
+            $this->movie->update($updates);
+            Log::info("Imagens do filme {$this->movie->id} atualizadas com sucesso.");
+        }
+    }
+
+    /**
+     * Auxiliar para baixar e salvar
+     */
+    private function downloadAndStore($url)
+    {
+        $response = Http::timeout(30)->get($url);
+
+        if ($response->successful()) {
+            $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION) ?: 'jpg';
+            $filename = "posters/" . Str::uuid() . "." . $extension;
+            
+            // Salva no S3
+            Storage::disk('s3')->put($filename, $response->body(), 'public');
+            
+            return $filename;
+        }
+
+        return null;
     }
 
     public function failed(\Throwable $exception)
     {
-        // Aqui reportamos o erro final no log após as 3 tentativas
-        Log::critical("ERRO CRÍTICO: Imagens do filme ID {$this->movie->id} não puderam ser salvas após todas as tentativas. {$exception}");
+        Log::critical("ERRO FINAL: Imagens do filme ID {$this->movie->id} falharam após 3 tentativas. Motivo: {$exception->getMessage()}");
     }
 }
