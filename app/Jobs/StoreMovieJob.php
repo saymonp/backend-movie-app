@@ -95,26 +95,22 @@ class StoreMovieJob implements ShouldQueue
     }
 
 
-    private function syncRelations($model, $relation, $relatedModel, $names)
-    {
-        if (empty($names)) return;
+    private function syncRelations($movie, $relation, $modelClass, $names)
+{
+    if (empty($names)) return;
 
-        // 1. Busca todos que já existem de uma vez só
-        $existing = $relatedModel::whereIn('nome', $names)->get();
+    $ids = collect($names)->map(function ($name) use ($modelClass) {
+        // 🔄 A MÁGICA ESTÁ AQUI:
+        // Procura por um registro com esse nome. 
+        // Se não achar, cria. Se achar, retorna o existente.
+        $record = $modelClass::firstOrCreate(['nome' => trim($name)]);
+        
+        return $record->id;
+    });
 
-        // 2. Identifica o que precisa ser criado
-        $existingNames = $existing->pluck('nome')->toArray();
-        $newNames = array_diff($names, $existingNames);
-
-        $newIds = [];
-        foreach ($newNames as $name) {
-            $newIds[] = $relatedModel::create(['nome' => $name])->id;
-        }
-
-        // 3. Junta os IDs existentes com os novos e sincroniza
-        $allIds = $existing->pluck('id')->merge($newIds);
-        $model->$relation()->sync($allIds);
-    }
+    // Sincroniza os IDs na tabela pivô
+    $movie->$relation()->sync($ids);
+}
 
     private function syncRelationsGeneros($model, $relation, $relatedModel, $items)
     {
@@ -238,9 +234,14 @@ class StoreMovieJob implements ShouldQueue
         }
 
         // 🎯 Slug
+        // 🎯 Slug
         $slug = $this->createSlug(
-            filled($ptBR['data']['title']) ? $ptBR['data']['title'] : null,
-            filled($enUS['data']['title']) ? $enUS['data']['title'] : $data['original_title'],
+            // Tenta pegar o título PT-BR, se não existir, usa o título padrão da resposta
+            filled($ptBR['data']['title'] ?? null) ? $ptBR['data']['title'] : ($data['title'] ?? null),
+
+            // Tenta pegar o título EN-US, se não existir, usa o original_title
+            filled($enUS['data']['title'] ?? null) ? $enUS['data']['title'] : ($data['original_title'] ?? $data['title']),
+
             $data['release_date'] ?? null,
             $data['id']
         );
