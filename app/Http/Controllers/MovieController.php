@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Services\TmdbService;
+use App\Jobs\StoreMovieJob;
 
 class MovieController extends Controller
 {
@@ -35,6 +37,34 @@ class MovieController extends Controller
      * Salva um novo filme e sincroniza os relacionamentos pivot.
      */
     public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'tmdb_id' => 'required|integer|unique:movies,tmdb_id'
+        ]);
+
+        // 2. Verificação de existência (Padrão 409 Conflict)
+        if (Movie::where('tmdb_id', $validated['tmdb_id'])->exists()) {
+            return response()->json([
+                'message' => 'Este filme já existe no catálogo.',
+                'status'  => 'error'
+            ], 409);
+        }
+
+        // 3. Despacho com ALTA PRIORIDADE
+        // método onQueue('high')
+        StoreMovieJob::dispatch($validated)
+            ->onQueue('high');
+
+        // 202 (Aceito para processamento)
+        return response()->json([
+            'message' => 'O filme foi enviado para processamento prioritário.',
+            'data' => [
+                'tmdb_id' => $validated['tmdb_id']
+            ]
+        ], 202);
+    }
+
+    public function store1(Request $request)
     {
         $validated = $request->validate([
             'tmdb_id'           => 'required|integer|unique:movies,tmdb_id',
