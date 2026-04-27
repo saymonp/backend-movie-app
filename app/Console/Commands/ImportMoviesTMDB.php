@@ -2,15 +2,12 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Attributes\Description;
-use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Bus;
 use App\Jobs\StoreMovieJob;
 use App\Models\Movie;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use App\Services\TmdbService;
 
 
 class ImportMoviesTMDB extends Command
@@ -24,44 +21,26 @@ class ImportMoviesTMDB extends Command
      */
     public function handle()
     {
+        
+        $tmdb = new TmdbService();
+
         $limit = $this->argument('limit');
         $pages = max(1, round($limit / 20)); // Garante pelo menos 1 página
-        $tmdb_api_key = config('services.tmdb.key');
 
         $this->info("Iniciando busca de filmes no TMDB. Páginas: {$pages}");
-
-        // Cache de gêneros (Perfeito!)
-        $genresEn = Cache::remember('tmdb_genres_en', now()->addWeek(), function () use ($tmdb_api_key) {
-            $response = Http::withToken($tmdb_api_key)
-                ->get('https://api.themoviedb.org/3/genre/movie/list?language=en-US');
-            return $response->json()['genres'] ?? [];
-        });
 
         $jobs = []; // Vamos guardar todos os jobs aqui antes de disparar o lote
 
         for ($page = 1; $page <= $pages; $page++) {
             $this->comment("Buscando página {$page}...");
 
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$tmdb_api_key}",
-                'accept' => 'application/json',
-            ])->get("https://api.themoviedb.org/3/movie/popular?&page={$page}");
-
-            if ($response->failed()) continue;
-
-            $movies = $response->json()['results'] ?? [];
+            $movies = $tmdb->getMoviePages($page);
 
             foreach ($movies as $movie) {
                 if (Movie::where('tmdb_id', $movie['id'])->doesntExist()) {
-                    $movieGenresEn = collect($genresEn)
-                        ->whereIn('id', $movie['genre_ids'])
-                        ->map(fn($g) => ['id' => $g['id'], 'name' => $g['name']])
-                        ->toArray();
 
                     $jobs[] = new StoreMovieJob([
                         'tmdb_id' => $movie['id'],
-                        'poster_path_en' => $movie['poster_path'],
-                        'generos_en' => $movieGenresEn
                     ]);
                 }
             }

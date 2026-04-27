@@ -17,6 +17,7 @@ class Movie extends Model
 
     protected $fillable = [
         'tmdb_id',
+        'imdb_id',
         'titulo_original',
         'titulo_br',
         'descricao_br',
@@ -80,5 +81,36 @@ class Movie extends Model
     public function paises(): BelongsToMany
     {
         return $this->belongsToMany(Pais::class, 'movie_paises');
+    }
+
+    // Ao criar sincroniza Relações
+    public function syncRelations($relation, $modelClass, $names)
+    {
+        if (empty($names)) return;
+
+        $ids = collect($names)->map(function ($name) use ($modelClass) {
+            $record = $modelClass::firstOrCreate(['nome' => trim($name)]);
+            return $record->id;
+        });
+
+        $this->$relation()->sync($ids);
+    }
+
+    public function syncRelationsGeneros($relation, $relatedModel, $items)
+    {
+        if (empty($items)) return;
+
+        $ids = collect($items)->map(function ($item) use ($relatedModel) {
+            $registro = $relatedModel::updateOrCreate(
+                ['tmdb_id' => $item['tmdb_id']],
+                [
+                    'nome_pt' => $item['nome_pt'],
+                    'nome_en' => $item['nome_en'],
+                ]
+            );
+            return $registro->id;
+        })->all();
+
+        $this->$relation()->sync($ids);
     }
 }

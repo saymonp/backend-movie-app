@@ -13,6 +13,11 @@ return [
     | a conventional file to locate the various service credentials.
     |
     */
+    // config/services.php
+    'google' => [
+        'translation_key' => env('GOOGLE_API_KEY'),
+    ],
+
     'tmdb' => [
         'key' => env('TMDB_API_KEY'),
     ],
