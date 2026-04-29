@@ -4,12 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Movie;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
-use App\Services\TmdbService;
 use App\Jobs\StoreMovieJob;
+use Illuminate\Support\Facades\Artisan;
 
 class MovieController extends Controller
 {
@@ -36,32 +32,31 @@ class MovieController extends Controller
     /**
      * Salva um novo filme e sincroniza os relacionamentos pivot.
      */
-    public function store(Request $request)
+    public function store(Request $request, $tmdb_id)
     {
-        $validated = $request->validate([
-            'tmdb_id' => 'required|integer|unique:movies,tmdb_id'
-        ]);
+        if ($request->user()->can('import movies')) {
+            // 1. Verificação de existência (Padrão 409 Conflict)
+            if (Movie::where('tmdb_id', $tmdb_id)->exists()) {
+                return response()->json([
+                    'message' => 'Este filme já existe no catálogo.',
+                    'status'  => 'error'
+                ], 409);
+            }
 
-        // 2. Verificação de existência (Padrão 409 Conflict)
-        if (Movie::where('tmdb_id', $validated['tmdb_id'])->exists()) {
+            // 2. Despacho com ALTA PRIORIDADE
+            // método onQueue('high')
+            StoreMovieJob::dispatch(['tmdb_id' => $tmdb_id])
+                ->onQueue('high');
+
+            // 202 (Aceito para processamento)
             return response()->json([
-                'message' => 'Este filme já existe no catálogo.',
-                'status'  => 'error'
-            ], 409);
+                'message' => 'O filme foi enviado para processamento prioritário.',
+                'data' => [
+                    'tmdb_id' => $tmdb_id
+                ]
+            ], 202);
         }
-
-        // 3. Despacho com ALTA PRIORIDADE
-        // método onQueue('high')
-        StoreMovieJob::dispatch($validated)
-            ->onQueue('high');
-
-        // 202 (Aceito para processamento)
-        return response()->json([
-            'message' => 'O filme foi enviado para processamento prioritário.',
-            'data' => [
-                'tmdb_id' => $validated['tmdb_id']
-            ]
-        ], 202);
+        return response()->json(['message' => 'Não autorizado'], 403);
     }
 
     /**
@@ -93,6 +88,24 @@ class MovieController extends Controller
             $movie = Movie::findOrFail($id);
             $movie->delete();
             return response()->json(['message' => 'Filme removido com sucesso'], 204);
+        }
+
+        return response()->json(['message' => 'Não autorizado'], 403);
+    }
+
+    public function importMovies(Request $request, $limit)
+    {
+        if ($request->user()->can('import movies')) {
+
+            // Executa o comando: php artisan import:movies {amount}
+            // Usamos queue para não travar a requisição HTTP
+            Artisan::queue('import:movies', [
+                'amount' => $limit
+            ]);
+
+            return response()->json([
+                'message' => "O processo de importação de {$limit} filmes foi iniciado em segundo plano.",
+            ], 202);
         }
 
         return response()->json(['message' => 'Não autorizado'], 403);

@@ -64,8 +64,7 @@ class TmdbService
                 // Tenta pegar o título EN-US, se não existir, usa o original_title
                 filled($enUS['data']['title'] ?? null) ? $enUS['data']['title'] : ($data['original_title'] ?? $data['title']),
 
-                $data['release_date'] ?? null,
-                $data['id']
+                $data['release_date'] ?? null
             );
 
             return [
