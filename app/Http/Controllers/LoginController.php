@@ -12,10 +12,11 @@ class LoginController extends Controller
 {
     public function handleGoogleCallback()
     {
-        // 1. Pega o usuário do Google (via Socialite)
         $googleUser = Socialite::driver('google')->user();
 
-        // 2. Busca ou cria o usuário no banco
+        // Verificamos se o usuário já existe antes do updateOrCreate
+        $userExists = User::where('email', $googleUser->email)->exists();
+
         $user = User::updateOrCreate([
             'email' => $googleUser->email,
         ], [
@@ -24,15 +25,16 @@ class LoginController extends Controller
             'avatar' => $googleUser->avatar,
         ]);
 
-        // 3. GERA O TOKEN (Sanctum)
+        // Se for um novo usuário, atribui a role padrão
+        if (!$userExists) {
+            $user->assignRole('user');
+        }
+
         $apiToken = $user->createToken('auth_token')->plainTextToken;
 
-        // 4. Retorna para o Frontend
-        return response()->json([
-            'access_token' => $apiToken,
-            'token_type' => 'Bearer',
-            'user' => $user
-        ]);
+        // Redireciona para o seu frontend (ex: localhost:3000) levando o token na URL
+        // O seu frontend então captura esse token e guarda no localStorage
+        return redirect("http://localhost:3000/auth/success?token={$apiToken}");
     }
 
     public function register(Request $request)
@@ -47,7 +49,15 @@ class LoginController extends Controller
 
         $user = User::create($dados);
 
-        return response()->json($user, 201);
+        // Todo usuário registrado manualmente começa como 'user'
+        $user->assignRole('user');
+        $apiToken = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'access_token' => $apiToken,
+            'token_type' => 'Bearer',
+            'user' => $user->load('roles')
+        ], 201);
     }
 
     public function login(Request $request)
@@ -59,17 +69,25 @@ class LoginController extends Controller
 
         $user = User::where('email', $dados['email'])->first();
 
-        if (!$user || !Hash::check($dados['password'], $user->password)) {
+        // Verificação extra: o usuário existe e TEM uma senha definida?
+        if (!$user || $user->password === null) {
+            return response()->json([
+                'message' => 'Esta conta utiliza login via Google. Por favor, entre com sua conta Google ou recupere sua senha.'
+            ], 401);
+        }
+
+        if (!Hash::check($dados['password'], $user->password)) {
             return response()->json([
                 'message' => 'Credenciais inválidas'
             ], 401);
         }
 
-        $token = $user->createToken("api-token")->plainTextToken;
+        $apiToken = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
-            'user' => $user,
-            'token' => $token
+            'access_token' => $apiToken,
+            'token_type' => 'Bearer',
+            'user' => $user->load('roles')
         ]);
     }
 
@@ -79,8 +97,25 @@ class LoginController extends Controller
 
         return response()->json([
             'message' => 'Logout realizado'
-        ]);
+        ], 200);
     }
 
-    
+    public function destroy($id)
+    {
+        $user = User::findOrFail($id);
+
+        /** @var \App\Models\User $currentUser */
+        $currentUser = Auth::user();
+
+        // Segurança: Só deleta se for o dono da conta OU se for admin
+        if ($currentUser->id !== $user->id && !$currentUser->hasRole('admin')) {
+            return response()->json(['message' => 'Não autorizado'], 403);
+        }
+
+        $user->delete();
+
+        return response()->json([
+            'message' => 'Usuário removido com sucesso',
+        ], 200);
+    }
 }
