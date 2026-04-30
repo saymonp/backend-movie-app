@@ -12,6 +12,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'remember_token'])]
@@ -63,8 +64,8 @@ class User extends Authenticatable
     }
 
     // Relação: Um usuário tem muitas reviews
-    public function reviews()
+    public function reviews(): HasMany
     {
-        //return $this->hasMany(Review::class);
+        return $this->hasMany(Review::class);
     }
 }
