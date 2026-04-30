@@ -100,22 +100,31 @@ class LoginController extends Controller
         ], 200);
     }
 
-    public function destroy($id)
+    /**
+     * O próprio usuário deleta sua conta
+     */
+    public function deleteOwnAccount(Request $request)
     {
-        $user = User::findOrFail($id);
+        $user = $request->user(); // Pega o usuário pelo Token, 100% seguro
 
-        /** @var \App\Models\User $currentUser */
-        $currentUser = Auth::user();
-
-        // Segurança: Só deleta se for o dono da conta OU se for admin
-        if ($currentUser->id !== $user->id && !$currentUser->hasRole('admin')) {
-            return response()->json(['message' => 'Não autorizado'], 403);
-        }
+        // Opcional: Revogar todos os tokens antes de deletar
+        $user->tokens()->delete();
 
         $user->delete();
 
-        return response()->json([
-            'message' => 'Usuário removido com sucesso',
-        ], 200);
+        return response()->json(['message' => 'Sua conta foi excluída com sucesso.'], 200);
+    }
+
+    /**
+     * Admin deleta um usuário específico
+     */
+    public function destroy($id)
+    {
+        // Apenas admins chegam aqui por causa do middleware na rota
+        $user = User::findOrFail($id);
+
+        $user->delete();
+
+        return response()->json(['message' => 'Usuário excluído pelo administrador.'], 200);
     }
 }
