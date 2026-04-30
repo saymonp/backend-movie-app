@@ -3,16 +3,14 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Review extends Model
+class Lista extends Model
 {
-    protected $fillable = ['titulo', 'comentario', 'rating', 'user_id', 'movie_id'];
+    protected $fillable = ['titulo', 'comentario', 'user_id'];
 
     protected $casts = [
-        'rating' => 'float',
         'created_at' => 'datetime',
         'updated_at' => 'datetime'
     ];
@@ -33,14 +31,14 @@ class Review extends Model
             ->as('tag'); // opcional
     }
 
-    public function movie(): BelongsTo
+    public function movie(): BelongsToMany
     {
-        return $this->belongsTo(Movie::class);
+        return $this->belongsToMany(Movie::class);
     }
 
     public function likes()
     {
-        return $this->belongsToMany(User::class, 'review_like');
+        return $this->belongsToMany(User::class, 'like_list');
     }
 
     // Método para contar likes

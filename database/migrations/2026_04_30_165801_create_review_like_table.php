@@ -11,9 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('tags', function (Blueprint $table) {
+        Schema::create('review_like', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('review_id')->constrained()->onDelete('cascade');
             $table->timestamps();
+
+            // Garante que o mesmo usuário não dê dois likes na mesma review
+            $table->unique(['user_id', 'review_id']);
         });
     }
 
@@ -22,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('tags');
+        Schema::dropIfExists('review_like');
     }
 };

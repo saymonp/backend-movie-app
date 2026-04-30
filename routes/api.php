@@ -9,8 +9,27 @@ use App\Http\Controllers\LoginController;
 
 use App\Http\Controllers\UserRoleController;
 use App\Http\Controllers\ReviewController;
+use App\Http\Controllers\ListaController;
 
 Route::middleware(['auth:sanctum'])->group(function () {
+    // Grupo de operações de Lista
+    Route::prefix('listas')->group(function () {
+        /**
+         * Criar uma nova lista
+         * POST /api/listas
+         */
+        Route::post('', [ListaController::class, 'store']);
+        /**
+         * Atualizar uma lista (Dono ou Admin)
+         * PUT ou PATCH /api/listas/{id}
+         */
+        Route::put('/{id}', [ListaController::class, 'update']);
+        /**
+         * Deletar uma lista (Dono ou Admin)
+         * DELETE /api/lista/{id}
+         */
+        Route::delete('/{id}', [ListaController::class, 'destroy']);
+    });
 
     // Grupo de Reviews dentro do contexto de Filmes
     Route::prefix('movies/{movie_id}')->group(function () {
@@ -29,6 +48,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // Grupo de operações diretas em uma Review
     Route::prefix('reviews')->group(function () {
+        Route::post('/reviews/{id}/like', [ReviewController::class, 'toggleLike']);
         /**
          * Atualizar uma review (Dono ou Admin)
          * PUT ou PATCH /api/reviews/{id}
@@ -50,7 +70,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/roles', [UserRoleController::class, 'listRoles']);
         Route::get('/users', [UserRoleController::class, 'listUsers']);
         Route::delete('/users/{id}', [LoginController::class, 'destroy']);
-    
+
         // Importar único Filme pelo TMDb_id
         Route::post('/movies/single/{tmdb_id}', [MovieController::class, 'store']);
 
@@ -76,8 +96,16 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
  */
 Route::get('/reviews/{id}', [ReviewController::class, 'show']);
 
+/**
+ * Ver detalhes de uma lista
+ * GET /api/listas/{id}
+ */
+Route::get('/listas/{id}', [ListaController::class, 'show']);
+/**
+ * Index Listas
+ * GET /api/listas
+ */
+Route::get('/listas/', [ListaController::class, 'index']);
 
 Route::post('/register', [LoginController::class, 'register']);
 Route::post('/login', [LoginController::class, 'login']);
-
-

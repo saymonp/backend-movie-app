@@ -14,9 +14,15 @@ class ReviewController extends Controller
      */
     public function index($movie_id)
     {
-        // Retorna as reviews do filme com os dados do autor (user) e as tags
+        /** @var \App\Models\User $userId */
+        $userId = Auth::user()->id;
+
         $reviews = Review::where('movie_id', $movie_id)
             ->with(['user', 'tags'])
+            ->withCount('likes')
+            ->withExists(['likes as is_liked' => function ($query) use ($userId) {
+                $query->where('user_id', $userId);
+            }])
             ->latest()
             ->paginate(10);
 
@@ -29,6 +35,16 @@ class ReviewController extends Controller
     public function show($id)
     {
         $review = Review::with(['user', 'tags', 'movie'])->findOrFail($id);
+
+        /** @var \App\Models\User $currentUser */
+        $currentUser = Auth::user();
+
+        // campo extra 'is_liked'
+        $review->is_liked = $review->likes()->where('user_id', $currentUser->id)->exists();
+
+        // Contagem total de likes
+        $review->likes_count = $review->likes()->count();
+
         return response()->json($review);
     }
 
@@ -109,5 +125,22 @@ class ReviewController extends Controller
         $review->delete();
 
         return response()->json(['message' => 'Review removida'], 200);
+    }
+
+    public function toggleLike(Request $request, $reviewId)
+    {
+        $user = $request->user();
+        $review = Review::findOrFail($reviewId);
+
+        // O toggle gerencia a inserção ou remoção na tabela pivot
+        $res = $user->likedReviews()->toggle($review->id);
+
+        $liked = count($res['attached']) > 0;
+
+        return response()->json([
+            'message' => $liked ? 'Like adicionado' : 'Like removido',
+            'is_liked' => $liked,
+            'likes_count' => $review->likes()->count()
+        ]);
     }
 }
