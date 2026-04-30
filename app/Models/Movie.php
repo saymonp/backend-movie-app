@@ -38,7 +38,9 @@ class Movie extends Model
         'colecao_id',
         'slug_pt',
         'slug_en',
-        'release_date'
+        'release_date',
+        'revenue',
+        'popularity'
     ];
 
     // Casts ajudam o Laravel a converter tipos do banco para o PHP
@@ -47,6 +49,8 @@ class Movie extends Model
         'duracao' => 'integer',
         'release_date' => 'date',
         'created_at' => 'datetime',
+        'revenue' => 'integer',
+        'popularity' => 'float'
     ];
 
     /**

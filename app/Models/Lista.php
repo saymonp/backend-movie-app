@@ -46,4 +46,11 @@ class Lista extends Model
     {
         return $this->likes()->count();
     }
+
+    public function movies()
+    {
+        return $this->belongsToMany(Movie::class, 'list_movie')
+            ->withPivot('ordem') // Permite acessar $movie->pivot->ordem
+            ->orderBy('list_movie.ordem', 'asc'); // Garante que venha ordenado por padrão
+    }
 }

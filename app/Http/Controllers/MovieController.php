@@ -6,16 +6,115 @@ use App\Models\Movie;
 use Illuminate\Http\Request;
 use App\Jobs\StoreMovieJob;
 use Illuminate\Support\Facades\Artisan;
+use App\Services\TmdbService;
 
 class MovieController extends Controller
 {
     /**
      * Lista os filmes com paginação e gêneros carregados (Eager Loading).
      */
-    public function index()
+    public function index(Request $request)
     {
-        $movies = Movie::with(['generos', 'colecao'])->paginate(15);
+        $lang = $request->input('lang', 'pt-BR');
+        // Iniciamos a query com os relacionamentos básicos para evitar o problema N+1
+        $query = Movie::with(['generos', 'diretores']);
+
+        // 1. Pesquisa Global por Texto (Título, Tagline, Descrição)
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('titulo_br', 'ILIKE', "%{$search}%")
+                    ->orWhere('titulo_en', 'ILIKE', "%{$search}%")
+                    ->orWhere('titulo_original', 'ILIKE', "%{$search}%")
+                    ->orWhere('tagline_br', 'ILIKE', "%{$search}%")
+                    ->orWhere('tagline_en', 'ILIKE', "%{$search}%")
+                    ->orWhere('descricao_br', 'ILIKE', "%{$search}%");
+            });
+        }
+
+        // 2. Filtro por Gêneros (Checkbox - Array de IDs)
+        if ($request->filled('generos')) {
+            $genres = (array) $request->input('generos');
+            $query->whereHas('generos', function ($q) use ($genres) {
+                $q->whereIn('generos.id', $genres);
+            });
+        }
+
+        // 3. Filtro por Ano de Lançamento
+        if ($request->filled('ano')) {
+            $query->whereYear('release_date', $request->input('ano'));
+        }
+
+        // 4. Filtro por Diretor (Array de IDs ou Nome)
+        if ($request->filled('diretores')) {
+            $diretores = (array) $request->input('diretores');
+            $query->whereHas('diretores', function ($q) use ($diretores) {
+                $q->whereIn('diretores.id', $diretores);
+            });
+        }
+
+        // 5. Filtro por Idioma (lingua_origem)
+        if ($request->filled('idioma')) {
+            $query->where('lingua_origem', $request->input('idioma'));
+        }
+
+        // --- BOTÕES ESPECÍFICOS ---
+
+        // 6. Botão Destaque (Baseado na métrica de popularidade)
+        if ($request->boolean('destaque')) {
+            $query->orderBy('popularity', 'desc');
+        }
+
+        if ($request->boolean('recentes')) {
+            // Filtra filmes lançados do dia de hoje até 6 meses atrás
+            $query->where('release_date', '>=', now()->subMonths(6))
+                ->orderBy('release_date', 'desc');
+        }
+
+        // 8. Maiores Bilheterias (Ordenação)
+        if ($request->boolean('bilheteria')) {
+            // Supondo que você tenha a coluna 'revenue' ou 'popularity'
+            $query->orderBy('revenue', 'desc');
+        } else {
+            // Ordenação padrão por data de lançamento
+            $query->orderBy('release_date', 'desc');
+        }
+
+        // Paginação com 24 itens (bom para grids de 2, 3, 4 ou 6 colunas)
+        $movies = $query->paginate(24)->withQueryString();
+
+        // Lógica de Busca por Demanda
+        if ($movies->isEmpty() && $request->filled('search')) {
+            return $this->handleMovieNotFound($search, $lang);
+        }
+
         return response()->json($movies);
+    }
+
+    protected function handleMovieNotFound($search, $lang)
+    {
+        // 1. Pesquisa rápida no TMDB (apenas para validar se existe)
+        $tmdb = new TmdbService();
+
+        $tmdbResults = $tmdb->searchMovie($search, $lang);
+
+        if (!empty($tmdbResults)) {
+            // Pegamos o ID do primeiro resultado relevante
+            $tmdbId = $tmdbResults[0]['id'];
+
+            // 2. Dispara o Job de alta prioridade
+            // onQueue('high') permite que esse job passe na frente de outros
+            StoreMovieJob::dispatch(['tmdb_id' => $tmdbId])
+                ->onQueue('high');
+
+            return response()->json([
+                'message' => 'Filme não encontrado localmente, mas localizado no TMDB. Estamos importando agora!',
+                'temp_result' => $tmdbResults[0], // Opcional: envia os dados básicos para o front exibir um "loading"
+                'status' => 'importing'
+            ], 202);
+        }
+
+        return response()->json(['message' => 'Nenhum filme encontrado.'], 404);
     }
 
     /**

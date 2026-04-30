@@ -81,6 +81,8 @@ class TmdbService
                 'lingua_origem'   => $data['original_language'] ?? 'en',
                 'release_date'    => $data['release_date'] ?? null,
                 'homepage'        => $data['homepage'] ?? null,
+                'revenue'         => $data['revenue'] ?? null,
+                'popularity'      => $data['popularity'] ?? null,
                 'slug_pt' => $slug['slug_pt'],
                 'slug_en' => $slug['slug_en'],
 
@@ -186,5 +188,14 @@ class TmdbService
         $movies = $response->json()['results'] ?? [];
 
         return $movies;
+    }
+
+    public function searchMovie($search, $lang)
+    {
+        return Http::withToken(config('services.tmdb.token'))
+            ->get("https://api.themoviedb.org/3/search/movie", [
+                'query' => $search,
+                'language' => $lang
+            ])->json('results');
     }
 }

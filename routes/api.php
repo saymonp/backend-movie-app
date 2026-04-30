@@ -15,6 +15,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Grupo de operações de Lista
     Route::prefix('listas')->group(function () {
         /**
+         * Alterar a ordem da lista
+         * POST /api/listas/{id}
+         */
+        Route::post('/{id}', [ListaController::class, 'reorderMovies']);
+        /**
          * Criar uma nova lista
          * POST /api/listas
          */
@@ -105,7 +110,13 @@ Route::get('/listas/{id}', [ListaController::class, 'show']);
  * Index Listas
  * GET /api/listas
  */
-Route::get('/listas/', [ListaController::class, 'index']);
+Route::get('/listas', [ListaController::class, 'index']);
+
+/**
+ * Index Filmes
+ * GET /api/filmes
+ */
+Route::get('/movies', [MovieController::class, 'index']);
 
 Route::post('/register', [LoginController::class, 'register']);
 Route::post('/login', [LoginController::class, 'login']);

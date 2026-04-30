@@ -71,6 +71,8 @@ class StoreMovieJob implements ShouldQueue
             'diretores'         => 'nullable|array',
             'estudios'          => 'nullable|array',
             'paises'            => 'nullable|array',
+            'revenue'           => 'nullable|integer',
+            'popularity'        => 'nullable|float',
             'colecao'           => 'nullable|array',
             'colecao.nome'      => 'required_with:colecao|string',
             'colecao.tmdb_id'   => 'required_with:colecao|integer',

@@ -12,18 +12,20 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('list_movie', function (Blueprint $table) {
-            $table->id();
             $table->timestamps();
 
             $table->foreignId('list_id')
                 ->constrained()
                 ->onDelete('cascade');
-                
+
             $table->foreignId('movie_id')
                 ->constrained()
                 ->onDelete('cascade');
 
+            $table->integer('ordem')->default(0);
+
             $table->primary(['list_id', 'movie_id']);
+            $table->index('ordem');
         });
     }
 
