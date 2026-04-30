@@ -4,12 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Movie;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
-use App\Services\TmdbService;
 use App\Jobs\StoreMovieJob;
+use Illuminate\Support\Facades\Artisan;
 
 class MovieController extends Controller
 {
@@ -36,129 +32,31 @@ class MovieController extends Controller
     /**
      * Salva um novo filme e sincroniza os relacionamentos pivot.
      */
-    public function store(Request $request)
+    public function store(Request $request, $tmdb_id)
     {
-        $validated = $request->validate([
-            'tmdb_id' => 'required|integer|unique:movies,tmdb_id'
-        ]);
-
-        // 2. Verificação de existência (Padrão 409 Conflict)
-        if (Movie::where('tmdb_id', $validated['tmdb_id'])->exists()) {
-            return response()->json([
-                'message' => 'Este filme já existe no catálogo.',
-                'status'  => 'error'
-            ], 409);
-        }
-
-        // 3. Despacho com ALTA PRIORIDADE
-        // método onQueue('high')
-        StoreMovieJob::dispatch($validated)
-            ->onQueue('high');
-
-        // 202 (Aceito para processamento)
-        return response()->json([
-            'message' => 'O filme foi enviado para processamento prioritário.',
-            'data' => [
-                'tmdb_id' => $validated['tmdb_id']
-            ]
-        ], 202);
-    }
-
-    public function store1(Request $request)
-    {
-        $validated = $request->validate([
-            'tmdb_id'           => 'required|integer|unique:movies,tmdb_id',
-            'titulo_original'   => 'required|string',
-            'titulo_br'         => 'nullable|string',
-            'titulo_en'         => 'nullable|string',
-            'descricao_br'      => 'nullable|string',
-            'descricao_en'      => 'required|string',
-            'tagline_br'        => 'nullable|string',
-            'tagline_en'        => 'nullable|string',
-            'slug_pt'           => 'nullable|string|unique:movies,slug_pt',
-            'slug_en'           => 'required|string|unique:movies,slug_en',
-            'rating'            => 'required|numeric',
-            'duracao'           => 'required|integer',
-            'lingua_origem'     => 'required|string|max:5',
-            'release_date'      => 'required|date',
-            'homepage'          => 'nullable|url',
-            'poster_br'         => 'required|url',
-            'poster_br_thumb'   => 'required|url',
-            'backdrop_br'       => 'required|url',
-            'poster_en'         => 'required|url',
-            'poster_en_thumb'   => 'required|url',
-            'generos'           => 'required|array',
-            'diretor'           => 'required|array',
-            'estudios'          => 'required|array',
-            'paises'            => 'required|array',
-            'colecao'           => 'nullable|array',
-            'colecao.tmdb_id'   => 'required_with:colecao|integer',
-            'colecao.name'      => 'required_with:colecao|string',
-        ]);
-
-        return DB::transaction(function () use ($request, $validated) {
-
-            // 1. Processamento Paralelo de Imagens (Reduz drasticamente o tempo de espera)
-            $imageMapping = [
-                'poster_br'       => 'poster_path_br',
-                'poster_br_thumb' => 'poster_thumb_br',
-                'backdrop_br'     => 'backdrop_path_br',
-                'poster_en'       => 'poster_path_us',
-                'poster_en_thumb' => 'poster_thumb_us',
-            ];
-
-            // Faz o download de todas as imagens simultaneamente
-            $urls = collect($imageMapping)->map(fn($dbCol, $reqKey) => $request->input($reqKey))->toArray();
-            $responses = Http::pool(fn($pool) => collect($urls)->map(fn($url) => $pool->get($url)));
-
-            foreach ($imageMapping as $requestKey => $dbColumn) {
-                $url = $request->input($requestKey);
-                // Localiza a resposta correta no pool
-                $res = collect($responses)->first(fn($r) => $r->effectiveUri() == $url);
-
-                if ($res && $res->successful()) {
-                    $extension = pathinfo(parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION) ?: 'jpg';
-                    $path = "posters/" . Str::uuid() . "." . $extension;
-                    Storage::disk('s3')->put($path, $res->body(), 'public');
-                    $validated[$dbColumn] = $path;
-                }
+        if ($request->user()->can('import movies')) {
+            // 1. Verificação de existência (Padrão 409 Conflict)
+            if (Movie::where('tmdb_id', $tmdb_id)->exists()) {
+                return response()->json([
+                    'message' => 'Este filme já existe no catálogo.',
+                    'status'  => 'error'
+                ], 409);
             }
 
-            // 2. Criar o Filme
-            $movie = Movie::create($validated);
+            // 2. Despacho com ALTA PRIORIDADE
+            // método onQueue('high')
+            StoreMovieJob::dispatch(['tmdb_id' => $tmdb_id])
+                ->onQueue('high');
 
-            // 3. Processar Relacionamentos (Usando método auxiliar para evitar repetição)
-            $this->syncRelations($movie, 'generos', \App\Models\Genero::class, $validated['generos']);
-            $this->syncRelations($movie, 'diretores', \App\Models\Diretor::class, $validated['diretor']);
-            $this->syncRelations($movie, 'estudios', \App\Models\Estudio::class, $validated['estudios']);
-            $this->syncRelations($movie, 'paises', \App\Models\Pais::class, $validated['paises']);
-
-            return response()->json(['id' => $movie->id], 201);
-        });
-    }
-
-    /**
-     * Método auxiliar para processar firstOrCreate e Sync de forma limpa
-     */
-    private function syncRelations($model, $relation, $relatedModel, $names)
-    {
-        if (empty($names)) return;
-
-        // 1. Busca todos que já existem de uma vez só
-        $existing = $relatedModel::whereIn('nome', $names)->get();
-
-        // 2. Identifica o que precisa ser criado
-        $existingNames = $existing->pluck('nome')->toArray();
-        $newNames = array_diff($names, $existingNames);
-
-        $newIds = [];
-        foreach ($newNames as $name) {
-            $newIds[] = $relatedModel::create(['nome' => $name])->id;
+            // 202 (Aceito para processamento)
+            return response()->json([
+                'message' => 'O filme foi enviado para processamento prioritário.',
+                'data' => [
+                    'tmdb_id' => $tmdb_id
+                ]
+            ], 202);
         }
-
-        // 3. Junta os IDs existentes com os novos e sincroniza
-        $allIds = $existing->pluck('id')->merge($newIds);
-        $model->$relation()->sync($allIds);
+        return response()->json(['message' => 'Não autorizado'], 403);
     }
 
     /**
@@ -183,11 +81,33 @@ class MovieController extends Controller
      * Remove o filme. 
      * Nota: O ON DELETE CASCADE no seu SQL já limpa as tabelas pivot automaticamente.
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
-        $movie = Movie::findOrFail($id);
-        $movie->delete();
+        // O Laravel verifica automaticamente se o usuário autenticado via Sanctum tem a permissão
+        if ($request->user()->can('delete movies')) {
+            $movie = Movie::findOrFail($id);
+            $movie->delete();
+            return response()->json(['message' => 'Filme removido com sucesso'], 204);
+        }
 
-        return response()->json(['message' => 'Filme removido com sucesso'], 204);
+        return response()->json(['message' => 'Não autorizado'], 403);
+    }
+
+    public function importMovies(Request $request, $limit)
+    {
+        if ($request->user()->can('import movies')) {
+
+            // Executa o comando: php artisan import:movies {amount}
+            // Usamos queue para não travar a requisição HTTP
+            Artisan::queue('import:movies', [
+                'amount' => $limit
+            ]);
+
+            return response()->json([
+                'message' => "O processo de importação de {$limit} filmes foi iniciado em segundo plano.",
+            ], 202);
+        }
+
+        return response()->json(['message' => 'Não autorizado'], 403);
     }
 }

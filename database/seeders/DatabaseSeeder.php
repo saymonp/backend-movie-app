@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Database\Seeders\RoleSeeder;
 
 class DatabaseSeeder extends Seeder
 {
@@ -15,11 +16,24 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+        $this->call([
+            RoleSeeder::class,
         ]);
+
+        // 2º: Agora criamos o usuário e atribuímos a role
+        //$admin = User::factory()->create([
+        //    'name' => 'Admin User',
+        //    'email' => 'admin@example.com', // Seu e-mail de acesso
+        //    'password' => bcrypt('password'), // login tradicional
+        //]);
+
+        // Só executa se for ambiente de desenvolvimento (local)
+        //if (app()->environment('local')) {
+        //    User::factory(10)->create();
+        //    $this->call(MovieDummySeeder::class);
+       // }
+
+        // Atribui a role que foi criada no RoleSeeder
+        //$admin->assignRole('admin');
     }
 }
