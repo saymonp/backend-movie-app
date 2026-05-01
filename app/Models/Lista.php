@@ -34,7 +34,7 @@ class Lista extends Model
 
     public function likes()
     {
-        return $this->belongsToMany(User::class, 'like_list');
+        return $this->belongsToMany(User::class, 'like_list', 'list_id', 'user_id', );
     }
 
     // Método para contar likes
@@ -61,5 +61,10 @@ class Lista extends Model
         });
 
         $this->tags()->sync($ids);
+    }
+
+    public function like()
+    {
+        return $this->belongsToMany(User::class, 'like_list', 'list_id', 'user_id');
     }
 }

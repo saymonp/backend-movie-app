@@ -81,24 +81,17 @@ class ListaController extends Controller
 
     public function index(Request $request)
     {
-        /** @var \App\Models\User $userId */
-        $userId = Auth::user()->id;
-
         $query = Lista::query()
             ->with([
-                'user:id,name',
-                'tags:id,nome_pt,nome_en',
+                'tags:id,nome',
                 'movies' => function ($q) {
                     $q->select('movies.id', 'poster_thumb_br')
                         ->orderBy('list_movie.ordem', 'asc')
                         ->limit(4);
                 }
             ])
-            ->withCount('likes') // Isso cria o campo 'likes_count' automaticamente
-            ->withExists(['likes as is_liked' => function ($q) use ($userId) {
-                $q->where('user_id', $userId);
-            }]);
-
+            ->withCount('likes'); // Isso cria o campo 'likes_count' automaticamente
+        
         // --- FILTROS ---
 
         // Busca por texto (Título/Comentário)
@@ -212,7 +205,7 @@ class ListaController extends Controller
         $lista = Lista::findOrFail($listaId);
 
         // O toggle gerencia a inserção ou remoção na tabela pivot
-        $res = $user->likedListas()->toggle($lista->id);
+        $res = $lista->likes()->toggle($user->id);
 
         $liked = count($res['attached']) > 0;
 
