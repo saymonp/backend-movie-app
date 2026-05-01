@@ -87,7 +87,15 @@ class LoginController extends Controller
         return response()->json([
             'access_token' => $apiToken,
             'token_type' => 'Bearer',
-            'user' => $user->load('roles')
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'is_admin' => $user->hasRole('admin'), // Um booleano rápido
+                // Transforma a coleção de objetos em um array simples de nomes
+                'permissions' => $user->getAllPermissions()->pluck('name'),
+                'roles' => $user->getRoleNames(),
+            ]
         ]);
     }
 

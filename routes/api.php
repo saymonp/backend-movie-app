@@ -125,5 +125,9 @@ Route::get('/movies', [MovieController::class, 'index']);
  */
 Route::get('/movies/{id}', [MovieController::class, 'show']);
 
+/**
+ * Autenticação
+ * POST /api/login
+ */
 Route::post('/register', [LoginController::class, 'register']);
 Route::post('/login', [LoginController::class, 'login']);
