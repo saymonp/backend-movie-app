@@ -48,4 +48,17 @@ class Review extends Model
     {
         return $this->likes()->count();
     }
+
+    // Ao criar sincroniza Tags
+    public function syncTags($tags)
+    {
+        if (empty($tags)) return;
+
+        $ids = collect($tags)->map(function ($nome) {
+            $record = Tag::firstOrCreate(['nome' => trim($nome)]);
+            return $record->id;
+        });
+
+        $this->tags()->sync($ids);
+    }
 }

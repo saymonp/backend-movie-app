@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Review;
 use App\Models\Tag;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class ReviewController extends Controller
 {
@@ -34,16 +35,12 @@ class ReviewController extends Controller
      */
     public function show($id)
     {
-        $review = Review::with(['user', 'tags', 'movie'])->findOrFail($id);
-
-        /** @var \App\Models\User $currentUser */
-        $currentUser = Auth::user();
-
-        // campo extra 'is_liked'
-        $review->is_liked = $review->likes()->where('user_id', $currentUser->id)->exists();
-
-        // Contagem total de likes
-        $review->likes_count = $review->likes()->count();
+        $userId = Auth::id();
+        $review = Review::with(['user', 'tags', 'movie'])->withCount('likes')
+            ->withExists(['likes as is_liked' => function ($query) use ($userId) {
+                $query->where('user_id', $userId);
+            }])
+            ->findOrFail($id);
 
         return response()->json($review);
     }
@@ -53,61 +50,65 @@ class ReviewController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $review = Review::findOrFail($id);
+        return DB::transaction(function () use ($request, $id) {
+            $review = Review::findOrFail($id);
 
-        // Segurança: Só o dono da review ou um Admin pode editar
-        if ($request->user()->id !== $review->user_id && !$request->user()->hasRole('admin')) {
-            return response()->json(['message' => 'Não autorizado'], 403);
-        }
+            // Segurança: Só o dono da review ou um Admin pode editar
+            if ($request->user()->id !== $review->user_id && !$request->user()->hasRole('admin')) {
+                return response()->json(['message' => 'Não autorizado'], 403);
+            }
 
-        $dados = $request->validate([
-            'titulo' => 'nullable|string',
-            'comentario' => 'nullable|string',
-            'rating' => 'required|numeric|min:0|max:5',
-            'tags' => 'array',
-            'tags.*' => 'exists:tags,id'
-        ]);
+            $dados = $request->validate([
+                'titulo' => 'nullable|string',
+                'comentario' => 'nullable|string',
+                'rating' => 'required|numeric|min:0|max:5',
+                'tags' => 'nullable|array',
+                'tags.*' => 'string|max:30',
+            ]);
 
-        $review->update($dados);
+            $review->update($dados);
 
-        // Atualiza as tags na pivot
-        if ($request->has('tags')) {
-            $review->tags()->sync($dados['tags']);
-        }
+            // Sincronizar as tags
+            if ($request->filled('tags')) {
+                $review->syncTags($dados['tags']);
+            }
 
-        return response()->json([
-            'message' => 'Review atualizada com sucesso',
-            'data' => $review->load('tags')
-        ]);
+            return response()->json([
+                'message' => 'Review atualizada com sucesso',
+                'data' => $review->load('tags')
+            ]);
+        });
     }
 
     public function store(Request $request, $movie_id)
     {
-        $dados = $request->validate([
-            'titulo' => 'nullable|string',
-            'comentario' => 'nullable|string',
-            'rating' => 'required|numeric|min:0|max:5',
-            'tags' => 'array',
-            'tags.*' => 'exists:tags,id'
-        ]);
+        return DB::transaction(function () use ($request, $movie_id) {
+            $dados = $request->validate([
+                'titulo' => 'nullable|string',
+                'comentario' => 'nullable|string',
+                'rating' => 'required|numeric|min:0|max:5',
+                'tags' => 'nullable|array',
+                'tags.*' => 'string|max:30',
+            ]);
 
         // 1. Pegar o ID do usuário logado pelo Token
-        /** @var \App\Models\User $currentUser */
-        $currentUser = Auth::user();
-        $dados['user_id'] = $currentUser->id;
+            /** @var \App\Models\User $currentUser */
+            $currentUser = Auth::user();
+            $dados['user_id'] = $currentUser->id;
 
-        // 2. Pegar o ID do filme que veio da URL
-        $dados['movie_id'] = $movie_id;
+            // 2. Pegar o ID do filme que veio da URL
+            $dados['movie_id'] = $movie_id;
 
-        // 3. Criar a review
-        $review = Review::create($dados);
+            // 3. Criar a review
+            $review = Review::create($dados);
 
-        // 4. Sincronizar as tags na tabela pivot
-        if ($request->has('tags')) {
-            $review->tags()->sync($dados['tags']);
-        }
+            // 4. Sincronizar as tags
+            if ($request->filled('tags')) {
+                $review->syncTags($dados['tags']);
+            }
 
-        return response()->json($review->load(['tags', 'user', 'movie']), 201);
+            return response()->json($review->load(['tags', 'user', 'movie']), 201);
+        });
     }
 
     /**
