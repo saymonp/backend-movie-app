@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use App\Jobs\StoreMovieJob;
 use Illuminate\Support\Facades\Artisan;
 use App\Services\TmdbService;
+use Illuminate\Support\Facades\DB;
 
 class MovieController extends Controller
 {
@@ -163,17 +164,19 @@ class MovieController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $movie = Movie::findOrFail($id);
+        return DB::transaction(function () use ($request, $id) {
+            $movie = Movie::findOrFail($id);
 
-        $movie->update($request->all());
+            $movie->update($request->all());
 
-        // O método sync remove o que não está no array e adiciona o que é novo
-        if ($request->has('generos')) $movie->generos()->sync($request->generos);
-        if ($request->has('diretores')) $movie->diretores()->sync($request->diretores);
-        if ($request->has('paises')) $movie->paises()->sync($request->paises);
-        if ($request->has('estudios')) $movie->estudios()->sync($request->estudios);
+            // O método sync remove o que não está no array e adiciona o que é novo
+            if ($request->has('generos')) $movie->generos()->sync($request->generos);
+            if ($request->has('diretores')) $movie->diretores()->sync($request->diretores);
+            if ($request->has('paises')) $movie->paises()->sync($request->paises);
+            if ($request->has('estudios')) $movie->estudios()->sync($request->estudios);
 
-        return response()->json($movie->fresh(['generos', 'diretores']));
+            return response()->json($movie->fresh(['generos', 'diretores']));
+        });
     }
 
     /**
@@ -196,10 +199,10 @@ class MovieController extends Controller
     {
         if ($request->user()->can('import movies')) {
 
-            // Executa o comando: php artisan import:movies {amount}
+            // Executa o comando: php artisan import:movies {limit}
             // Usamos queue para não travar a requisição HTTP
             Artisan::queue('import:movies', [
-                'amount' => $limit
+                'limit' => $limit
             ]);
 
             return response()->json([

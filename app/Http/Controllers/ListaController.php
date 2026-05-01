@@ -31,7 +31,7 @@ class ListaController extends Controller
                 'titulo' => 'required|string|max:255', // Deixei required pois uma lista sem nome é difícil de achar
                 'comentario' => 'nullable|string',
                 'tags' => 'nullable|array',
-                'tags.*' => 'exists:tags,id',
+                'tags.*' => 'string|max:30',
                 'movies' => 'required|array', // A lista precisa de filmes
                 'movies.*.id' => 'nullable|integer', // Pode ser nulo se for recém-importado
                 'movies.*.tmdb_id' => 'required|integer', // tmdb_id é nossa âncora de segurança
@@ -51,7 +51,7 @@ class ListaController extends Controller
 
             // 3. Sincronizar as tags
             if ($request->filled('tags')) {
-                $lista->tags()->sync($dados['tags']);
+                $lista->syncTags($dados['tags']);
             }
 
             // 4. Sincronizar filmes com Ordem
@@ -81,7 +81,7 @@ class ListaController extends Controller
 
     public function index(Request $request)
     {
-        /** @var \App\Models\User $currentUser */
+        /** @var \App\Models\User $userId */
         $userId = Auth::user()->id;
 
         $query = Lista::query()
@@ -204,5 +204,22 @@ class ListaController extends Controller
         }
 
         return response()->json(['message' => 'Ordem atualizada!']);
+    }
+
+    public function toggleLike(Request $request, $listaId)
+    {
+        $user = $request->user();
+        $lista = Lista::findOrFail($listaId);
+
+        // O toggle gerencia a inserção ou remoção na tabela pivot
+        $res = $user->likedListas()->toggle($lista->id);
+
+        $liked = count($res['attached']) > 0;
+
+        return response()->json([
+            'message' => $liked ? 'Like adicionado' : 'Like removido',
+            'is_liked' => $liked,
+            'likes_count' => $lista->likes()->count()
+        ]);
     }
 }

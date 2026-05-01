@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\Tag;
 
 class Lista extends Model
 {
@@ -19,7 +20,7 @@ class Lista extends Model
         'created_at',
         'updated_at'
     ];
-
+    protected $table = 'lists';
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -27,14 +28,9 @@ class Lista extends Model
 
     public function tags(): BelongsToMany
     {
-        return $this->belongsToMany(Tag::class)
-            ->as('tag'); // opcional
+        return $this->belongsToMany(Tag::class, 'list_tag', 'list_id', 'tag_id');
     }
 
-    public function movie(): BelongsToMany
-    {
-        return $this->belongsToMany(Movie::class);
-    }
 
     public function likes()
     {
@@ -47,10 +43,23 @@ class Lista extends Model
         return $this->likes()->count();
     }
 
-    public function movies()
+    public function movies(): BelongsToMany
     {
-        return $this->belongsToMany(Movie::class, 'list_movie')
+        return $this->belongsToMany(Movie::class, 'list_movie', 'list_id', 'movie_id')
             ->withPivot('ordem') // Permite acessar $movie->pivot->ordem
             ->orderBy('list_movie.ordem', 'asc'); // Garante que venha ordenado por padrão
+    }
+
+    // Ao criar sincroniza Tags
+    public function syncTags($tags)
+    {
+        if (empty($tags)) return;
+
+        $ids = collect($tags)->map(function ($nome) {
+            $record = Tag::firstOrCreate(['nome' => trim($nome)]);
+            return $record->id;
+        });
+
+        $this->tags()->sync($ids);
     }
 }

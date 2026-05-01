@@ -69,6 +69,7 @@ class TmdbService
 
             return [
                 'tmdb_id'         => $data['id'],
+                'imdb_id'         => $data['imdb_id'] ?? null,
                 'titulo_original' => $data['original_title'] ?? null,
                 'titulo_br'       => $ptBR['data']['title'] ?? $data['title'] ?? null,
                 'descricao_br'    => $ptBR['data']['overview'] ?? $data['overview'] ?? null,
@@ -192,10 +193,14 @@ class TmdbService
 
     public function searchMovie($search, $lang)
     {
-        return Http::withToken(config('services.tmdb.token'))
-            ->get("https://api.themoviedb.org/3/search/movie", [
-                'query' => $search,
-                'language' => $lang
-            ])->json('results');
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$this->token}",
+            'accept' => 'application/json',
+        ])->get("https://api.themoviedb.org/3/search/movie", [
+            'query' => $search,
+            'language' => $lang
+        ])->json('results');
+
+        return $response;
     }
 }

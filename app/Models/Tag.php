@@ -20,4 +20,9 @@ class Tag extends Model
     {
         return $this->belongsToMany(Review::class);
     }
+
+    public function listas(): BelongsToMany
+    {
+        return $this->belongsToMany(Review::class, 'list_tag', 'tag_id', 'list_id');
+    }
 }

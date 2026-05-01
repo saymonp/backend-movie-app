@@ -14,6 +14,8 @@ use App\Http\Controllers\ListaController;
 Route::middleware(['auth:sanctum'])->group(function () {
     // Grupo de operações de Lista
     Route::prefix('listas')->group(function () {
+        // /api/listas/{id}/like
+        Route::post('{id}/like', [ListaController::class, 'toggleLike']);
         /**
          * Alterar a ordem da lista
          * POST /api/listas/{id}
@@ -114,9 +116,14 @@ Route::get('/listas', [ListaController::class, 'index']);
 
 /**
  * Index Filmes
- * GET /api/filmes
+ * GET /api/movies
  */
 Route::get('/movies', [MovieController::class, 'index']);
+/**
+ * Show Filme
+ * GET /api/movies
+ */
+Route::get('/movies/{id}', [MovieController::class, 'show']);
 
 Route::post('/register', [LoginController::class, 'register']);
 Route::post('/login', [LoginController::class, 'login']);
