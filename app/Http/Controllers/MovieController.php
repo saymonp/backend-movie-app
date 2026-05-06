@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Movie;
+use App\Models\Genero;
+use App\Models\Diretor;
 use Illuminate\Http\Request;
 use App\Jobs\StoreMovieJob;
 use Illuminate\Support\Facades\Artisan;
@@ -189,7 +191,7 @@ class MovieController extends Controller
         if ($request->user()->can('delete movies')) {
             $movie = Movie::findOrFail($id);
             $movie->delete();
-            return response()->json(['message' => 'Filme removido com sucesso'], 204);
+            return response()->json(['message' => 'Filme removido com sucesso'], 200);
         }
 
         return response()->json(['message' => 'Não autorizado'], 403);
@@ -211,5 +213,33 @@ class MovieController extends Controller
         }
 
         return response()->json(['message' => 'Não autorizado'], 403);
+    }
+
+    public function indexGenres()
+    {
+        $generos = Genero::all();
+
+        return response()->json($generos);
+    }
+
+    public function indexDirectors()
+    {
+        $diretores = Diretor::all();
+
+        return response()->json($diretores);
+    }
+
+    public function getIdioms()
+    {
+        // Obtém todos os valores únicos da coluna 'lingua_origem'
+        // Onde o valor não é nulo e ordena alfabeticamente
+        $idiomas = Movie::query()
+            ->select('lingua_origem')
+            ->whereNotNull('lingua_origem')
+            ->distinct()
+            ->orderBy('lingua_origem', 'asc')
+            ->pluck('lingua_origem');
+
+        return response()->json($idiomas);
     }
 }

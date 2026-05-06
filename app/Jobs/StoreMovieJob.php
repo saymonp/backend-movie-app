@@ -33,12 +33,12 @@ class StoreMovieJob implements ShouldQueue
     public function handle(): void
     {
         $tmdb = new TmdbService();
-        
+
         $generos_ids = $tmdb->getMovieGeneros();
-        
+
         // 1. Obter detalhes
         $movieResponse = $tmdb->getMovieDetails($this->data['tmdb_id'], $generos_ids);
-        
+
         if (!$movieResponse) {
             return;
         }
@@ -76,8 +76,11 @@ class StoreMovieJob implements ShouldQueue
             'colecao'           => 'nullable|array',
             'colecao.nome'      => 'required_with:colecao|string',
             'colecao.tmdb_id'   => 'required_with:colecao|integer',
+            'colecao.poster_path' => 'nullable|string',
+            'colecao.poster_thumb' => 'nullable|string',
+            'colecao.backdrop_path' => 'nullable|string'
         ]);
-  
+
         if ($validator->fails()) {
             Log::warning("Validação falhou para filme TMDB {$this->data['tmdb_id']}: " . $validator->errors()->first());
             return;
@@ -88,11 +91,12 @@ class StoreMovieJob implements ShouldQueue
         // 3. Persistência
         $movie = DB::transaction(function () use ($validated) {
             $movieCreated = Movie::create($validated);
-            
+
             $movieCreated->syncRelationsGeneros('generos', \App\Models\Genero::class, $validated['generos']);
             $movieCreated->syncRelations('diretores', \App\Models\Diretor::class, $validated['diretores'] ?? []);
             $movieCreated->syncRelations('estudios', \App\Models\Estudio::class, $validated['estudios'] ?? []);
             $movieCreated->syncRelations('paises', \App\Models\Pais::class, $validated['paises'] ?? []);
+            $movieCreated->syncRelationsColecao($validated['colecao'] ?? []);
 
             return $movieCreated;
         });

@@ -119,6 +119,9 @@ Route::get('/listas', [ListaController::class, 'index']);
  * GET /api/movies
  */
 Route::get('/movies', [MovieController::class, 'index']);
+Route::get('/movies/generos', [MovieController::class, 'indexGenres']);
+Route::get('/movies/diretores', [MovieController::class, 'indexDirectors']);
+Route::get('/movies/idiomas', [MovieController::class, 'getIdioms']);
 /**
  * Show Filme
  * GET /api/movies

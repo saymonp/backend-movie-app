@@ -40,7 +40,7 @@ class Movie extends Model
         'slug_en',
         'release_date',
         'revenue',
-        'popularity'
+        'popularity',
     ];
 
     // Casts ajudam o Laravel a converter tipos do banco para o PHP
@@ -116,5 +116,21 @@ class Movie extends Model
         })->all();
 
         $this->$relation()->sync($ids);
+    }
+
+    public function syncRelationsColecao($colecao)
+    {
+        if (empty($colecao)) return;
+
+        // O updateOrCreate precisa de uma chave para comparar e os dados para atualizar
+        // Exemplo: usar o tmdb_id da coleção para não duplicar no banco
+        $registro = Colecao::updateOrCreate(
+            ['tmdb_id' => $colecao['tmdb_id']],
+            $colecao
+        );
+
+        // Para relacionamentos BelongsTo, usamos associate
+        $this->colecao()->associate($registro);
+        $this->save(); // Importante: associate() apenas altera o ID no objeto, save() grava no banco.
     }
 }
