@@ -43,10 +43,9 @@ class StoreMovieJob implements ShouldQueue
             return;
         }
         //Log::info('Movie response:', $movieResponse);
-
         // 2. Validação
         $validator = Validator::make($movieResponse, [
-            'tmdb_id'           => 'required|integer|unique:movies,tmdb_id',
+            'tmdb_id' => 'required|integer',
             'imdb_id'           => 'nullable|string',
             'titulo_original'   => 'required|string',
             'titulo_br'         => 'nullable|string',
@@ -55,8 +54,8 @@ class StoreMovieJob implements ShouldQueue
             'descricao_en'      => 'required|string',
             'tagline_br'        => 'nullable|string',
             'tagline_en'        => 'nullable|string',
-            'slug_pt'           => 'nullable|string|unique:movies,slug_pt',
-            'slug_en'           => 'required|string|unique:movies,slug_en',
+            'slug_pt'           => 'nullable|string',
+            'slug_en'           => 'required|string',
             'rating'            => 'required|numeric',
             'duracao'           => 'required|integer',
             'lingua_origem'     => 'required|string|max:5',
@@ -73,6 +72,7 @@ class StoreMovieJob implements ShouldQueue
             'paises'            => 'nullable|array',
             'revenue'           => 'nullable|integer',
             'popularity'        => 'nullable|numeric',
+            'status'            =>  'nullable|string',
             'colecao'           => 'nullable|array',
             'colecao.nome'      => 'required_with:colecao|string',
             'colecao.tmdb_id'   => 'required_with:colecao|integer',
@@ -82,6 +82,7 @@ class StoreMovieJob implements ShouldQueue
         ]);
 
         if ($validator->fails()) {
+            dump('Validator Falhou', $validator->errors()->first());
             Log::warning("Validação falhou para filme TMDB {$this->data['tmdb_id']}: " . $validator->errors()->first());
             return;
         }
@@ -90,15 +91,20 @@ class StoreMovieJob implements ShouldQueue
 
         // 3. Persistência
         $movie = DB::transaction(function () use ($validated) {
-            $movieCreated = Movie::create($validated);
+            $searchCondition = ['tmdb_id' => $validated['tmdb_id']];
 
-            $movieCreated->syncRelationsGeneros('generos', \App\Models\Genero::class, $validated['generos']);
-            $movieCreated->syncRelations('diretores', \App\Models\Diretor::class, $validated['diretores'] ?? []);
-            $movieCreated->syncRelations('estudios', \App\Models\Estudio::class, $validated['estudios'] ?? []);
-            $movieCreated->syncRelations('paises', \App\Models\Pais::class, $validated['paises'] ?? []);
-            $movieCreated->syncRelationsColecao($validated['colecao'] ?? []);
+            $movieRecord = Movie::updateOrCreate($searchCondition, $validated);
 
-            return $movieCreated;
+            $movieRecord->syncRelationsGeneros('generos', \App\Models\Genero::class, $validated['generos']);
+            $movieRecord->syncRelations('diretores', \App\Models\Diretor::class, $validated['diretores'] ?? []);
+            $movieRecord->syncRelations('estudios', \App\Models\Estudio::class, $validated['estudios'] ?? []);
+            $movieRecord->syncRelations('paises', \App\Models\Pais::class, $validated['paises'] ?? []);
+            $movieRecord->syncRelationsColecao($validated['colecao'] ?? []);
+
+            $movieRecord->status = 'processado';
+            $movieRecord->save();
+            
+            return $movieRecord;
         });
 
         Log::info('Movie criado?', ['movie' => $movie]);

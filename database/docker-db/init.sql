@@ -33,6 +33,8 @@ CREATE TABLE movies (
 
     homepage TEXT,
 
+    status TEXT,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

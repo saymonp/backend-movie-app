@@ -203,4 +203,18 @@ class TmdbService
 
         return $response;
     }
+
+    public function getCollectionDetails($collectionId, $lang = 'pt-BR')
+    {
+        $response = Http::withToken($this->token)
+            ->get("https://api.themoviedb.org/3/collection/{$collectionId}", [
+                'language' => $lang
+            ]);
+
+        if ($response->successful()) {
+            return $response->json()['parts']; // Retorna a lista de filmes
+        }
+
+        return [];
+    }
 }

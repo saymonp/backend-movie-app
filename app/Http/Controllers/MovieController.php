@@ -5,11 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\Movie;
 use App\Models\Genero;
 use App\Models\Diretor;
+use App\Models\Colecao;
 use Illuminate\Http\Request;
 use App\Jobs\StoreMovieJob;
 use Illuminate\Support\Facades\Artisan;
 use App\Services\TmdbService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class MovieController extends Controller
 {
@@ -103,8 +105,13 @@ class MovieController extends Controller
 
         if (!empty($tmdbResults)) {
             // Pegamos o ID do primeiro resultado relevante
-            $tmdbId = $tmdbResults[0]['id'];
 
+            $tmdbId = $tmdbResults[0]['id'];
+            $temp_slug = (string)rand(1, 999);
+            $movieRecord = Movie::firstOrCreate(
+                ['tmdb_id' => $tmdbId], // Busca por isso
+                ['titulo_original' => $tmdbResults[0]['original_title'], 'slug_pt' => $temp_slug, 'slug_en' => $temp_slug, 'status' => 'processando'] // Se não achar, cria com isso
+            );
             // 2. Dispara o Job de alta prioridade
             // onQueue('high') permite que esse job passe na frente de outros
             StoreMovieJob::dispatch(['tmdb_id' => $tmdbId])
@@ -113,7 +120,9 @@ class MovieController extends Controller
             return response()->json([
                 'message' => 'Filme não encontrado localmente, mas localizado no TMDB. Estamos importando agora!',
                 'temp_result' => $tmdbResults[0], // Opcional: envia os dados básicos para o front exibir um "loading"
-                'status' => 'importing'
+                'status' => 'processando',
+                'id' => $movieRecord->id,
+                'tmdb_id' => $tmdbResults[0]['id']
             ], 202);
         }
 
@@ -123,12 +132,68 @@ class MovieController extends Controller
     /**
      * Exibe um filme específico com todos os seus relacionamentos.
      */
-    public function show($id)
+    public function show($slug)
     {
+        // 1. Extrai o ID da URL (ex: 235-slug-do-filme)
+        $id = explode('-', $slug)[0];
+
+        // 2. Carrega o filme com as relações básicas
         $movie = Movie::with(['generos', 'diretores', 'estudios', 'paises', 'colecao'])
             ->findOrFail($id);
 
-        return response()->json($movie);
+        $collectionMovies = collect();
+
+        if ($movie->colecao_id) {
+            // 3. Tenta buscar filmes da coleção no banco local (exceto o próprio filme atual)
+            $collectionMovies = Movie::where('colecao_id', $movie->colecao_id)
+                ->where('id', '!=', $movie->id)
+                ->select('id', 'titulo_br', 'titulo_en', 'poster_thumb_br', 'rating', 'tmdb_id', 'slug_pt', 'slug_en')
+                ->get();
+
+            // 4. Se não houver outros filmes da coleção no banco, busca no TMDB
+            if ($collectionMovies->isEmpty() && $movie->colecao->tmdb_id) {
+                $tmdb = new TmdbService();
+                $tmdbResults = $tmdb->getCollectionDetails($movie->colecao->tmdb_id); // Deve retornar o array 'parts'
+
+                $collectionMovies = collect($tmdbResults)->map(function ($item) use ($movie) {
+                    // Pula o filme atual na listagem da coleção
+                    if ($item['id'] == $movie->tmdb_id) return null;
+
+                    // Cria o registro básico para permitir que o usuário interaja/clique
+                    $tempSlug = (string)rand(1000, 9999);
+                    $movieRecord = Movie::firstOrCreate(
+                        ['tmdb_id' => $item['id']],
+                        [
+                            'titulo_original' => $item['original_title'] ?? ($item['title'] ?? ''),
+                            'titulo_br' => $item['title'] ?? '',
+                            'poster_thumb_br' => $item['poster_path'] ?? null,
+                            'rating' => $item['vote_average'] ?? 0,
+                            'colecao_id' => $movie->colecao_id, // Vincula à coleção existente
+                            'status' => 'processando',
+                            'slug_pt' => $tempSlug,
+                            'slug_en' => $tempSlug
+                        ]
+                    );
+
+                    // Dispara o Job para cada filme da coleção que não está completo
+                    StoreMovieJob::dispatch(['tmdb_id' => $item['id']])->onQueue('high');
+
+                    return [
+                        'id' => $movieRecord->id,
+                        'title' => $item['title'] ?? '',
+                        'poster' => $item['poster_path'] ? "https://image.tmdb.org/t/p/w500" . $item['poster_path'] : null,
+                        'rating' => $item['vote_average'] ?? 0,
+                        'status' => 'processando'
+                    ];
+                })->filter()->values();
+            }
+        }
+
+        // Adiciona a lista formatada ao objeto de resposta
+        return response()->json([
+            'movie' => $movie,
+            'collection' => $collectionMovies
+        ]);
     }
 
     /**
@@ -139,12 +204,10 @@ class MovieController extends Controller
         if ($request->user()->can('import movies')) {
             // 1. Verificação de existência (Padrão 409 Conflict)
             if (Movie::where('tmdb_id', $tmdb_id)->exists()) {
-                return response()->json([
-                    'message' => 'Este filme já existe no catálogo.',
-                    'status'  => 'error'
-                ], 409);
+                $message = 'Este filme já existe no catálogo e será atualizado em processamento prioritário';
+            } else {
+                $message = 'O filme foi enviado para processamento prioritário.';
             }
-
             // 2. Despacho com ALTA PRIORIDADE
             // método onQueue('high')
             StoreMovieJob::dispatch(['tmdb_id' => $tmdb_id])
@@ -152,7 +215,7 @@ class MovieController extends Controller
 
             // 202 (Aceito para processamento)
             return response()->json([
-                'message' => 'O filme foi enviado para processamento prioritário.',
+                'message' => $message,
                 'data' => [
                     'tmdb_id' => $tmdb_id
                 ]
