@@ -20,7 +20,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
          * Alterar a ordem da lista
          * POST /api/listas/{id}
          */
-        Route::post('/{id}', [ListaController::class, 'reorderMovies']);
+        Route::put('/{id}/reorder', [ListaController::class, 'reorderMovies']);
         /**
          * Criar uma nova lista
          * POST /api/listas
@@ -92,7 +92,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 });
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+Route::middleware('auth:sanctum')->get('/me', function (Request $request) {
     // Aqui você pode carregar as roles e permissões também
     return $request->user()->load('roles');
 });
@@ -110,9 +110,14 @@ Route::get('/reviews/{id}', [ReviewController::class, 'show']);
 Route::get('/listas/{id}', [ListaController::class, 'show']);
 /**
  * Index Listas
- * GET /api/listas
+ * GET /api/listas/index
  */
 Route::get('/listas', [ListaController::class, 'index']);
+/**
+ * Index Listas para adicionar na Lista de filmes
+ * GET /api/movies/listas
+ */
+Route::get('/movies/listas', [MovieController::class, 'indexAddToList']);
 
 /**
  * Index Filmes

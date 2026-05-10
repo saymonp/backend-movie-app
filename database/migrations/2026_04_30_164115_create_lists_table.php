@@ -17,6 +17,9 @@ return new class extends Migration
 
             $table->string('titulo');
             $table->text('comentario')->nullable();
+            $table->string('slug');
+            $table->string('idioma');
+            $table->boolean('publica');
 
             $table->foreignId('user_id')
                 ->constrained()

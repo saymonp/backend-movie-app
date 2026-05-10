@@ -96,6 +96,50 @@ class MovieController extends Controller
         return response()->json($movies);
     }
 
+    public function indexAddToList(Request $request)
+    {
+        $lang = $request->input('lang', 'pt-BR');
+        $search = $request->input('search');
+
+        // Iniciamos a query selecionando apenas os campos necessários do filme
+        $query = Movie::query()->select([
+            'id',
+            'titulo_original',
+            'titulo_br',
+            'titulo_en',
+            'rating',
+
+        ]);
+
+        if ($request->filled('search')) {
+            $query->where(function ($q) use ($search) {
+                // Pesquisa nos campos da tabela Movies
+                $q->where('titulo_br', 'ILIKE', "%{$search}%")
+                    ->orWhere('titulo_en', 'ILIKE', "%{$search}%")
+                    ->orWhere('titulo_original', 'ILIKE', "%{$search}%")
+                    ->orWhere('tagline_br', 'ILIKE', "%{$search}%")
+                    ->orWhere('descricao_br', 'ILIKE', "%{$search}%");
+
+                // PESQUISA NA TABELA RELACIONADA (diretores)
+                $q->orWhereHas('diretores', function ($queryDiretor) use ($search) {
+                    $queryDiretor->where('nome', 'ILIKE', "%{$search}%");
+                });
+            });
+        }
+
+        // Carrega o relacionamento, limita e executa
+        $movies = $query->with('diretores')
+            ->limit(10)
+            ->get();
+
+        // Lógica de Busca por Demanda
+        if ($movies->isEmpty() && $request->filled('search')) {
+            return $this->handleMovieNotFound($search, $lang);
+        }
+
+        return response()->json($movies);
+    }
+
     protected function handleMovieNotFound($search, $lang)
     {
         // 1. Pesquisa rápida no TMDB (apenas para validar se existe)
@@ -122,7 +166,7 @@ class MovieController extends Controller
                 'temp_result' => $tmdbResults[0], // Opcional: envia os dados básicos para o front exibir um "loading"
                 'status' => 'processando',
                 'id' => $movieRecord->id,
-                'tmdb_id' => $tmdbResults[0]['id']
+                'tmdb_id' => $tmdbResults[0]['id'],
             ], 202);
         }
 

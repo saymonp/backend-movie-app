@@ -9,7 +9,7 @@ use App\Models\Tag;
 
 class Lista extends Model
 {
-    protected $fillable = ['titulo', 'comentario', 'user_id'];
+    protected $fillable = ['titulo', 'comentario', 'user_id', 'slug', 'idioma', 'publica'];
 
     protected $casts = [
         'created_at' => 'datetime',

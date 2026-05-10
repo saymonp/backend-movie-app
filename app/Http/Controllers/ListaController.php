@@ -14,7 +14,25 @@ class ListaController extends Controller
     {
         $userId = Auth::id();
 
-        $lista = Lista::with(['user', 'tags', 'movies'])
+        $lista = Lista::with([
+            'user',
+            'tags',
+            // Filtramos apenas as colunas desejadas do relacionamento movies
+            'movies' => function ($query) {
+                $query->select([
+                    'movies.id',              // Necessário para o Eloquent
+                    'movies.tmdb_id',
+                    'movies.titulo_br',       // Nome
+                    'movies.titulo_en',
+                    'movies.titulo_original',
+                    'movies.slug_pt',
+                    'movies.slug_en',
+                    'movies.poster_thumb_br', // Poster BR
+                    'movies.poster_thumb_us', // Poster EN
+                    'movies.rating'           // Rating
+                ]);
+            }
+        ])
             ->withCount('likes')
             ->withExists(['likes as is_liked' => function ($query) use ($userId) {
                 $query->where('user_id', $userId);
@@ -81,17 +99,27 @@ class ListaController extends Controller
 
     public function index(Request $request)
     {
+        // Tenta pegar o usuário sem exigir autenticação
+        $user = Auth::guard('sanctum')->user();
+        $userId = $user ? $user->id : null;
+
         $query = Lista::query()
             ->with([
                 'tags:id,nome',
                 'movies' => function ($q) {
-                    $q->select('movies.id', 'poster_thumb_br')
+                    $q->select('movies.id', 'poster_thumb_br', 'poster_thumb_us')
                         ->orderBy('list_movie.ordem', 'asc')
                         ->limit(4);
                 }
             ])
-            ->withCount('likes'); // Isso cria o campo 'likes_count' automaticamente
-        
+            ->withCount('likes')
+            ->when($userId, function ($query) use ($userId) {
+                $query->withExists(['likes as is_liked' => function ($q) use ($userId) {
+                    $q->where('user_id', $userId);
+                }]);
+            }); // Isso cria o campo 'likes_count' automaticamente
+
+
         // --- FILTROS ---
 
         // Busca por texto (Título/Comentário)
@@ -121,6 +149,16 @@ class ListaController extends Controller
             $query->latest();
         }
 
+        // Filtro por Usuário no Perfil
+        if ($userId && $request->filled('perfil')) {
+            if ($request->input('perfil') == true) {
+                $query->where('user_id', $userId);
+                $listas = $query->paginate(12)->withQueryString();
+
+                return response()->json($listas);
+            }
+        }
+
         $listas = $query->paginate(12)->withQueryString();
 
         return response()->json($listas);
@@ -139,17 +177,16 @@ class ListaController extends Controller
             $dados = $request->validate([
                 'titulo' => 'nullable|string',
                 'comentario' => 'nullable|string',
-                'tags' => 'array',
-                'tags.*' => 'exists:tags,id',
-                'movies' => 'array',
+                'tags.*' => 'nullable|string|max:30',
+                'movies' => 'nullable|array',
                 'movies.*' => 'exists:movies,id'
             ]);
 
             $lista->update($dados);
 
             // Atualiza as tags na pivot
-            if ($request->has('tags')) {
-                $lista->tags()->sync($dados['tags']);
+            if ($request->filled('tags')) {
+                $lista->syncTags($dados['tags']);
             }
 
             // Atualiza os filmes na pivot
@@ -180,6 +217,11 @@ class ListaController extends Controller
 
     public function reorderMovies(Request $request, $listaId)
     {
+        $request->validate([
+            'movie_ids' => 'required|array',
+            'movie_ids.*' => 'exists:movies,id'
+        ]);
+
         $lista = Lista::findOrFail($listaId);
 
         // Segurança: Apenas o dono pode reordenar
@@ -187,7 +229,7 @@ class ListaController extends Controller
             return response()->json(['message' => 'Não autorizado'], 403);
         }
 
-        $orderedIds = $request->input('movie_ids'); // Ex: [5, 2, 8, 1]
+        $orderedIds = $request->movie_ids; // Ex: [5, 2, 8, 1]
 
         // Atualizamos a ordem na tabela pivot
         foreach ($orderedIds as $index => $movieId) {
