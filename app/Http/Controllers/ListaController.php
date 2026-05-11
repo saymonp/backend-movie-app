@@ -97,9 +97,8 @@ class ListaController extends Controller
 
     public function index(Request $request)
     {
-        // Tenta pegar o usuário sem exigir autenticação
-        $user = Auth::guard('sanctum')->user();
-        $userId = $user ? $user->id : null;
+        // 1. Captura o usuário via Sanctum para verificar likes e privacidade
+        $userId = Auth::guard('sanctum')->id();
 
         $query = Lista::query()
             ->with([
@@ -110,14 +109,12 @@ class ListaController extends Controller
                         ->limit(4);
                 }
             ])
-            ->withCount('likes')
-            ->when($userId, function ($q) use ($userId) {
-                $q->withExists(['likes as is_liked' => function ($l) use ($userId) {
-                    $l->where('user_id', $userId);
-                }]);
-            });
+            ->withCount(['likes', 'movies']) // Adicionado movies_count aqui
+            ->withExists(['likes as is_liked' => function ($l) use ($userId) {
+                $l->where('user_id', $userId);
+            }]);
 
-        // --- LÓGICA DE PRIVACIDADE E FILTRO DE USUÁRIO ---
+        // 2. Lógica de Privacidade e Filtro de Usuário (user_only)
         if ($request->boolean('user_only') && $userId) {
             $query->where('user_id', $userId);
         } else {
@@ -129,9 +126,7 @@ class ListaController extends Controller
             });
         }
 
-        // --- FILTROS DE BUSCA ---
-
-        // Busca por texto
+        // 3. Filtros de Busca (Texto e Tags)
         if ($request->filled('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
@@ -143,7 +138,6 @@ class ListaController extends Controller
             });
         }
 
-        // Filtro por Tags (IDs)
         if ($request->filled('tags')) {
             $tags = (array) $request->input('tags');
             $query->whereHas('tags', function ($q) use ($tags) {
@@ -151,21 +145,46 @@ class ListaController extends Controller
             });
         }
 
-        // --- NOVO FILTRO: Mínimo de Likes ---
-        // Ex: ?filterValue=10
+        // 4. Filtro de Mínimo de Likes
         if ($request->filled('filterValue')) {
             $minLikes = (int) $request->input('filterValue');
             $query->has('likes', '>=', $minLikes);
         }
 
-        // --- ORDENAÇÃO ---
-        if ($request->boolean('popular')) {
-            $query->orderBy('likes_count', 'desc');
-        } else {
-            $query->latest();
+        // 5. Ordenação Dinâmica (orderBy)
+        $sort = $request->input('orderBy');
+
+        switch ($sort) {
+            case 'likes':
+                $query->orderBy('likes_count', 'desc');
+                break;
+            case 'recentes':
+                $query->latest(); // created_at desc
+                break;
+            case 'ativas':
+                $query->orderBy('updated_at', 'desc');
+                break;
+            case 'filmes':
+                $query->orderBy('movies_count', 'desc');
+                break;
+            default:
+                // Caso não passe nada ou passe algo inválido, o padrão é as ativas (updated_at)
+                // ou recentes (created_at), conforme sua preferência de UX.
+                $query->orderBy('updated_at', 'desc');
+                break;
         }
 
-        // --- EXECUÇÃO ÚNICA DA PAGINAÇÃO ---
+        // --- ORDENAÇÃO ---
+        if ($request->boolean('top_listas')) {
+            $query->orderBy('likes_count', 'desc');
+        } elseif ($request->boolean('mais_ativas')) {
+            // Se "ativas" para você significa listas que acabaram de ser criadas ou editadas
+            $query->orderBy('updated_at', 'desc');
+        } else {
+            $query->latest(); // Padrão: created_at desc
+        }
+
+        // 6. Paginação com persistência de filtros na URL
         return response()->json(
             $query->paginate(12)->withQueryString()
         );
