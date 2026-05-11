@@ -120,12 +120,17 @@ class ListaController extends Controller
 
         // --- FILTROS ---
 
-        // Busca por texto (Título/Comentário)
+        // Busca por texto (Título, Comentário ou Nome da Tag)
         if ($request->filled('search')) {
             $search = $request->input('search');
+
             $query->where(function ($q) use ($search) {
                 $q->where('titulo', 'ILIKE', "%{$search}%")
-                    ->orWhere('comentario', 'ILIKE', "%{$search}%");
+                    ->orWhere('comentario', 'ILIKE', "%{$search}%")
+                    // Adiciona a busca nas tags relacionadas
+                    ->orWhereHas('tags', function ($tagQuery) use ($search) {
+                        $tagQuery->where('nome', 'ILIKE', "%{$search}%");
+                    });
             });
         }
 
@@ -148,8 +153,8 @@ class ListaController extends Controller
         }
 
         // Filtro por Usuário no Perfil
-        if ($userId && $request->filled('perfil')) {
-            if ($request->input('perfil') == true) {
+        if ($userId && $request->filled('user_only')) {
+            if ($request->input('user_only') == true) {
                 $query->where('user_id', $userId);
                 $listas = $query->paginate(12)->withQueryString();
 
