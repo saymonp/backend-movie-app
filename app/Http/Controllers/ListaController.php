@@ -111,30 +111,44 @@ class ListaController extends Controller
                 }
             ])
             ->withCount('likes')
-            ->when($userId, function ($query) use ($userId) {
-                $query->withExists(['likes as is_liked' => function ($q) use ($userId) {
-                    $q->where('user_id', $userId);
+            ->when($userId, function ($q) use ($userId) {
+                $q->withExists(['likes as is_liked' => function ($l) use ($userId) {
+                    $l->where('user_id', $userId);
                 }]);
-            }); // Isso cria o campo 'likes_count' automaticamente
+            });
 
+        // --- LÓGICA DE PRIVACIDADE E FILTRO DE USUÁRIO ---
 
-        // --- FILTROS ---
+        if ($request->boolean('user_only') && $userId) {
+            // Se quer ver apenas as próprias listas, filtra pelo ID do usuário logado
+            // Aqui ele pode ver tanto suas listas públicas quanto privadas
+            $query->where('user_id', $userId);
+        } else {
+            // Se for a listagem geral, SÓ mostra o que for público
+            // OU se você quiser que o usuário veja as dele (mesmo privadas) na geral:
+            $query->where(function ($q) use ($userId) {
+                $q->where('publica', true);
+                if ($userId) {
+                    $q->orWhere('user_id', $userId);
+                }
+            });
+        }
 
-        // Busca por texto (Título, Comentário ou Nome da Tag)
+        // --- FILTROS DE BUSCA ---
+
+        // Busca por texto
         if ($request->filled('search')) {
             $search = $request->input('search');
-
             $query->where(function ($q) use ($search) {
                 $q->where('titulo', 'ILIKE', "%{$search}%")
                     ->orWhere('comentario', 'ILIKE', "%{$search}%")
-                    // Adiciona a busca nas tags relacionadas
                     ->orWhereHas('tags', function ($tagQuery) use ($search) {
                         $tagQuery->where('nome', 'ILIKE', "%{$search}%");
                     });
             });
         }
 
-        // Filtro por Tags
+        // Filtro por Tags (IDs)
         if ($request->filled('tags')) {
             $tags = (array) $request->input('tags');
             $query->whereHas('tags', function ($q) use ($tags) {
@@ -144,27 +158,17 @@ class ListaController extends Controller
 
         // --- ORDENAÇÃO ---
 
-        // Se o front enviar ?popular=1, ordena pelos mais curtidos
         if ($request->boolean('popular')) {
             $query->orderBy('likes_count', 'desc');
         } else {
-            // Ordenação padrão: mais recentes
             $query->latest();
         }
 
-        // Filtro por Usuário no Perfil
-        if ($userId && $request->filled('user_only')) {
-            if ($request->input('user_only') == true) {
-                $query->where('user_id', $userId);
-                $listas = $query->paginate(12)->withQueryString();
+        // --- EXECUÇÃO ÚNICA DA PAGINAÇÃO ---
 
-                return response()->json($listas);
-            }
-        }
-
-        $listas = $query->paginate(12)->withQueryString();
-
-        return response()->json($listas);
+        return response()->json(
+            $query->paginate(12)->withQueryString()
+        );
     }
 
     public function update(Request $request, $id)
