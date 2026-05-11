@@ -12,7 +12,7 @@ class ListaController extends Controller
 {
     public function show($id)
     {
-        $userId = Auth::id();
+        $userId = Auth::guard('sanctum')->id();
 
         $lista = Lista::with([
             'user',
@@ -118,14 +118,9 @@ class ListaController extends Controller
             });
 
         // --- LÓGICA DE PRIVACIDADE E FILTRO DE USUÁRIO ---
-
         if ($request->boolean('user_only') && $userId) {
-            // Se quer ver apenas as próprias listas, filtra pelo ID do usuário logado
-            // Aqui ele pode ver tanto suas listas públicas quanto privadas
             $query->where('user_id', $userId);
         } else {
-            // Se for a listagem geral, SÓ mostra o que for público
-            // OU se você quiser que o usuário veja as dele (mesmo privadas) na geral:
             $query->where(function ($q) use ($userId) {
                 $q->where('publica', true);
                 if ($userId) {
@@ -156,8 +151,14 @@ class ListaController extends Controller
             });
         }
 
-        // --- ORDENAÇÃO ---
+        // --- NOVO FILTRO: Mínimo de Likes ---
+        // Ex: ?filterValue=10
+        if ($request->filled('filterValue')) {
+            $minLikes = (int) $request->input('filterValue');
+            $query->has('likes', '>=', $minLikes);
+        }
 
+        // --- ORDENAÇÃO ---
         if ($request->boolean('popular')) {
             $query->orderBy('likes_count', 'desc');
         } else {
@@ -165,7 +166,6 @@ class ListaController extends Controller
         }
 
         // --- EXECUÇÃO ÚNICA DA PAGINAÇÃO ---
-
         return response()->json(
             $query->paginate(12)->withQueryString()
         );
