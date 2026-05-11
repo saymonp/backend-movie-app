@@ -51,8 +51,7 @@ class ListaController extends Controller
                 'tags' => 'nullable|array',
                 'tags.*' => 'string|max:30',
                 'movies' => 'required|array', // A lista precisa de filmes
-                'movies.*.id' => 'nullable|integer', // Pode ser nulo se for recém-importado
-                'movies.*.tmdb_id' => 'required|integer', // tmdb_id é nossa âncora de segurança
+                'movies.*.id' => 'required|integer', // Pode ser nulo se for recém-importado
             ]);
 
             // 1. Pegar o ID do usuário logado
@@ -75,8 +74,7 @@ class ListaController extends Controller
             // 4. Sincronizar filmes com Ordem
             // Usamos o $index do foreach para definir a ordem
             foreach ($request->movies as $index => $movieData) {
-                $movie = Movie::where('id', $movieData['id'] ?? null)
-                    ->orWhere('tmdb_id', $movieData['tmdb_id'])
+                $movie = Movie::where('id', $movieData['id'])
                     ->first();
 
                 if ($movie) {
@@ -192,6 +190,15 @@ class ListaController extends Controller
             // Atualiza os filmes na pivot
             if ($request->has('movies')) {
                 $lista->movies()->sync($dados['movies']);
+
+                $orderedIds = $dados['movies']; // Ex: [5, 2, 8, 1]
+
+                // Atualizamos a ordem na tabela pivot
+                foreach ($orderedIds as $index => $movieId) {
+                    $lista->movies()->updateExistingPivot($movieId, [
+                        'ordem' => $index // O índice do array vira a posição no banco
+                    ]);
+                }
             }
 
             return response()->json([

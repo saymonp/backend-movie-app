@@ -40,7 +40,13 @@ class StoreMovieJob implements ShouldQueue
         $movieResponse = $tmdb->getMovieDetails($this->data['tmdb_id'], $generos_ids);
 
         if (!$movieResponse) {
-            return;
+
+            Movie::where('tmdb_id', $this->data['tmdb_id'])
+                ->update([
+                    'status' => 'erro'
+                ]);
+
+            throw new \Exception('TMDB não retornou dados');
         }
         //Log::info('Movie response:', $movieResponse);
         // 2. Validação
@@ -66,7 +72,7 @@ class StoreMovieJob implements ShouldQueue
             'backdrop_path'     => 'nullable|url',
             'poster_path_us'    => 'nullable|url',
             'poster_thumb_us'   => 'nullable|url',
-            'generos'           => 'required|array',
+            'generos'           => 'nullable|array',
             'diretores'         => 'nullable|array',
             'estudios'          => 'nullable|array',
             'paises'            => 'nullable|array',
@@ -91,9 +97,60 @@ class StoreMovieJob implements ShouldQueue
 
         // 3. Persistência
         $movie = DB::transaction(function () use ($validated) {
-            $searchCondition = ['tmdb_id' => $validated['tmdb_id']];
 
-            $movieRecord = Movie::updateOrCreate($searchCondition, $validated);
+            $requiredFields = [
+                'titulo_original',
+                'descricao_en',
+                'slug_en',
+                'rating',
+                'duracao',
+                'release_date'
+            ];
+
+            foreach ($requiredFields as $field) {
+                if (empty($validated[$field])) {
+                    throw new \Exception("Campo obrigatório vazio: {$field}");
+                }
+            }
+
+            $movieRecord = Movie::where('tmdb_id', $validated['tmdb_id'])
+                ->lockForUpdate()
+                ->first();
+
+            if (!$movieRecord) {
+                $movieRecord = new Movie([
+                    'tmdb_id' => $validated['tmdb_id'],
+                    'status' => 'processando'
+                ]);
+            }
+
+            $movieData = [
+                'imdb_id' => $validated['imdb_id'],
+                'titulo_original' => $validated['titulo_original'],
+                'titulo_br' => $validated['titulo_br'],
+                'titulo_en' => $validated['titulo_en'],
+                'descricao_br' => $validated['descricao_br'],
+                'descricao_en' => $validated['descricao_en'],
+                'tagline_br' => $validated['tagline_br'],
+                'tagline_en' => $validated['tagline_en'],
+                'slug_pt' => $validated['slug_pt'],
+                'slug_en' => $validated['slug_en'],
+                'rating' => $validated['rating'],
+                'duracao' => $validated['duracao'],
+                'lingua_origem' => $validated['lingua_origem'],
+                'release_date' => $validated['release_date'],
+                'homepage' => $validated['homepage'],
+                'revenue' => $validated['revenue'],
+                'popularity' => $validated['popularity'],
+            ];
+
+            $movieData = array_filter(
+                $movieData,
+                fn($value) => !is_null($value) && $value !== ''
+            );
+
+            $movieRecord->fill($movieData);
+            $movieRecord->save();
 
             $movieRecord->syncRelationsGeneros('generos', \App\Models\Genero::class, $validated['generos']);
             $movieRecord->syncRelations('diretores', \App\Models\Diretor::class, $validated['diretores'] ?? []);
@@ -103,10 +160,10 @@ class StoreMovieJob implements ShouldQueue
 
             $movieRecord->status = 'processado';
             $movieRecord->save();
-            
+
             return $movieRecord;
         });
-
+        $movie->refresh();
         Log::info('Movie criado?', ['movie' => $movie]);
         if ($movie) {
             $imageUrls = $this->createImageArray($validated);

@@ -107,8 +107,10 @@ class MovieController extends Controller
             'titulo_original',
             'titulo_br',
             'titulo_en',
+            'release_date',
             'rating',
-
+            'poster_thumb_br',
+            'poster_thumb_us'
         ]);
 
         if ($request->filled('search')) {
