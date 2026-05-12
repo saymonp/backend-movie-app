@@ -258,10 +258,11 @@ class MovieController extends Controller
         if ($movie->colecao_id) {
             $collectionMovies = Movie::where('colecao_id', $movie->colecao_id)
                 ->where('id', '!=', $movie->id)
-                ->select('id', 'titulo_br', 'titulo_en', 'poster_thumb_br', 'rating', 'slug_pt', 'slug_en')
+                ->select('id', 'titulo_original', 'titulo_br', 'titulo_en', 'poster_thumb_br', 'poster_thumb_us', 'rating', 'slug_pt', 'slug_en')
                 ->get();
 
             // 4. Se não houver outros filmes da coleção no banco, busca no TMDB
+            // TODO verifica se os filmes estão completos, se tem imagem e títulos e rating. Se não pega do tmdb
             if ($collectionMovies->isEmpty() && $movie->colecao->tmdb_id) {
                 $tmdb = new TmdbService();
                 $tmdbResults = $tmdb->getCollectionDetails($movie->colecao->tmdb_id); // Deve retornar o array 'parts'
@@ -291,9 +292,12 @@ class MovieController extends Controller
 
                     return [
                         'id' => $movieRecord->id,
-                        'title' => $item['title'] ?? '',
-                        'poster' => $item['poster_path'] ? "https://image.tmdb.org/t/p/w500" . $item['poster_path'] : null,
+                        'titulo_original' => $item['title'] ?? '',
+                        'poster_thumb_br' => $item['poster_path'] ? "https://image.tmdb.org/t/p/w500" . $item['poster_path'] : null,
+                        'poster_thumb_us' => $item['poster_path'] ? "https://image.tmdb.org/t/p/w500" . $item['poster_path'] : null,
                         'rating' => $item['vote_average'] ?? 0,
+                        'slug_pt'=> $tempSlug,
+                        'slug_en'=> $tempSlug,
                         'status' => 'processando'
                     ];
                 })->filter()->values();
