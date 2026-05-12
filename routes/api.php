@@ -102,7 +102,11 @@ Route::middleware('auth:sanctum')->get('/me', function (Request $request) {
  * GET /api/reviews/{id}
  */
 Route::get('/reviews/{id}', [ReviewController::class, 'show']);
-
+/**
+ * Lista de Reviews
+ * GET /api/reviews?user_only=true
+ */
+Route::get('/reviews', [ReviewController::class, 'index']);
 /**
  * Ver detalhes de uma lista
  * GET /api/listas/{id}
@@ -132,7 +136,11 @@ Route::get('/movies/idiomas', [MovieController::class, 'getIdioms']);
  * GET /api/movies
  */
 Route::get('/movies/{id}', [MovieController::class, 'show']);
-
+/**
+ * Show Filme Com todos os detalhes relacionados
+ * GET /api/movies/{id}/full-details
+ */
+Route::get('/movies/{id}/full-details', [MovieController::class, 'showFull']);
 /**
  * Autenticação
  * POST /api/login

@@ -13,19 +13,39 @@ class ReviewController extends Controller
     /**
      * Lista as reviews de um filme específico.
      */
-    public function index($movie_id)
+    public function index(Request $request, $movie_id = null)
     {
-        /** @var \App\Models\User $userId */
-        $userId = Auth::user()->id;
+        // 1. Identifica o usuário (Sanctum ou Auth padrão)
+        $userId = Auth::guard('sanctum')->id() ?? Auth::id();
 
-        $reviews = Review::where('movie_id', $movie_id)
-            ->with(['user', 'tags'])
+        $query = Review::query()
+            ->with([
+                'user:id,name,avatar',
+                'tags:id,nome',
+                'movie:id,titulo_br,titulo_original,titulo_en,poster_thumb_br,poster_thumb_us'
+            ])
             ->withCount('likes')
-            ->withExists(['likes as is_liked' => function ($query) use ($userId) {
-                $query->where('user_id', $userId);
+            ->withExists(['likes as is_liked' => function ($q) use ($userId) {
+                $q->where('user_id', $userId);
             }])
-            ->latest()
-            ->paginate(10);
+            // A mágica acontece aqui: só filtra por movie_id se ele for passado
+            ->when($movie_id, function ($q) use ($movie_id) {
+                $q->where('movie_id', $movie_id);
+            });
+
+        // 2. Lógica de Privacidade e Filtro de Usuário (user_only)
+        if ($request->boolean('user_only') && $userId) {
+            $query->where('user_id', $userId);
+        } else {
+            $query->where(function ($q) use ($userId) {
+                if ($userId) {
+                    $q->orWhere('user_id', $userId);
+                }
+            });
+        }
+
+        // 3. Ordenação e Paginação
+        $reviews = $query->latest()->paginate(10);
 
         return response()->json($reviews);
     }
@@ -36,7 +56,11 @@ class ReviewController extends Controller
     public function show($id)
     {
         $userId = Auth::id();
-        $review = Review::with(['user', 'tags', 'movie'])->withCount('likes')
+        $review = Review::with([
+            'user:id,name,avatar',
+            'tags:id,nome',
+            'movie:id,titulo_br,titulo_original,titulo_en,poster_thumb_br,poster_thumb_us'
+        ])->withCount('likes')
             ->withExists(['likes as is_liked' => function ($query) use ($userId) {
                 $query->where('user_id', $userId);
             }])

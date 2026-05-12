@@ -241,7 +241,112 @@ class MovieController extends Controller
             'collection' => $collectionMovies
         ]);
     }
+    public function showFull($slug)
+    {
+        // 1. Extrai o ID da URL
+        $id = explode('-', $slug)[0];
 
+        // 2. Carrega o filme com relações essenciais
+        // Usamos o ID do usuário (opcional) para já trazer se ele deu "like" nas reviews
+        $userId = auth('sanctum')->id();
+
+        $movie = Movie::with(['generos', 'diretores', 'estudios', 'paises', 'colecao'])
+            ->findOrFail($id);
+
+        // --- 3. COLEÇÃO (Lógica que você já tinha) ---
+        $collectionMovies = collect();
+        if ($movie->colecao_id) {
+            $collectionMovies = Movie::where('colecao_id', $movie->colecao_id)
+                ->where('id', '!=', $movie->id)
+                ->select('id', 'titulo_br', 'titulo_en', 'poster_thumb_br', 'rating', 'slug_pt', 'slug_en')
+                ->get();
+
+            // 4. Se não houver outros filmes da coleção no banco, busca no TMDB
+            if ($collectionMovies->isEmpty() && $movie->colecao->tmdb_id) {
+                $tmdb = new TmdbService();
+                $tmdbResults = $tmdb->getCollectionDetails($movie->colecao->tmdb_id); // Deve retornar o array 'parts'
+
+                $collectionMovies = collect($tmdbResults)->map(function ($item) use ($movie) {
+                    // Pula o filme atual na listagem da coleção
+                    if ($item['id'] == $movie->tmdb_id) return null;
+
+                    // Cria o registro básico para permitir que o usuário interaja/clique
+                    $tempSlug = (string)rand(1000, 9999);
+                    $movieRecord = Movie::firstOrCreate(
+                        ['tmdb_id' => $item['id']],
+                        [
+                            'titulo_original' => $item['original_title'] ?? ($item['title'] ?? ''),
+                            'titulo_br' => $item['title'] ?? '',
+                            'poster_thumb_br' => $item['poster_path'] ?? null,
+                            'rating' => $item['vote_average'] ?? 0,
+                            'colecao_id' => $movie->colecao_id, // Vincula à coleção existente
+                            'status' => 'processando',
+                            'slug_pt' => $tempSlug,
+                            'slug_en' => $tempSlug
+                        ]
+                    );
+
+                    // Dispara o Job para cada filme da coleção que não está completo
+                    StoreMovieJob::dispatch(['tmdb_id' => $item['id']])->onQueue('high');
+
+                    return [
+                        'id' => $movieRecord->id,
+                        'title' => $item['title'] ?? '',
+                        'poster' => $item['poster_path'] ? "https://image.tmdb.org/t/p/w500" . $item['poster_path'] : null,
+                        'rating' => $item['vote_average'] ?? 0,
+                        'status' => 'processando'
+                    ];
+                })->filter()->values();
+            }
+        }
+
+        // --- 4. FILMES RELACIONADOS (Mesma "pegada") ---
+        // Busca filmes que compartilham os mesmos gêneros, excluindo o atual
+        $generoIds = $movie->generos->pluck('id');
+        $relatedMovies = Movie::whereHas('generos', function ($q) use ($generoIds) {
+            $q->whereIn('generos.id', $generoIds);
+        })
+            ->where('id', '!=', $movie->id)
+            ->where('status', 'processado')
+            ->select('id', 'titulo_br', 'titulo_original', 'poster_thumb_br', 'rating', 'slug_pt', 'slug_en')
+            ->orderBy('rating', 'desc')
+            ->limit(12)
+            ->get();
+
+        // --- 5. LISTAS RELACIONADAS ---
+        // Busca listas que contenham o filme atual ou que tenham o nome do filme no título/descrição
+        $relatedLists = \App\Models\Lista::whereHas('movies', function ($q) use ($movie) {
+            $q->where('movies.id', $movie->id);
+        })
+            ->orWhere('titulo', 'like', "%{$movie->titulo_br}%")
+            ->with(['movies' => function ($q) {
+                $q->select('movies.id', 'poster_thumb_br')->limit(4); // Pegamos só 4 posters para o estilo visual
+            }])
+            ->limit(8)
+            ->get();
+
+        // --- 6. REVIEWS POPULARES ---
+        // Pegamos as reviews mais recentes/curtidas (conforme sua lógica de reviews públicas)
+        $reviews = \App\Models\Review::where('movie_id', $movie->id)
+            ->with(['user:id,name,avatar', 'tags:id,nome'])
+            ->withCount('likes')
+            ->withExists(['likes as is_liked' => function ($q) use ($userId) {
+                $q->where('user_id', $userId);
+            }])
+            ->orderBy('likes_count', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get();
+
+        // 7. Resposta Única (O "Big Object")
+        return response()->json([
+            'movie'       => $movie,
+            'collection'  => $collectionMovies,
+            'related'     => $relatedMovies,
+            'lists'       => $relatedLists,
+            'reviews'     => $reviews,
+        ]);
+    }
     /**
      * Salva um novo filme e sincroniza os relacionamentos pivot.
      */
