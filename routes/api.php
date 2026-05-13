@@ -14,6 +14,10 @@ use App\Http\Controllers\ListaController;
 Route::middleware(['auth:sanctum'])->group(function () {
     // Grupo de operações de Lista
     Route::prefix('listas')->group(function () {
+        // listas/toggle-movie
+        Route::post('/toggle-movie', [ListaController::class, 'toggleAddToList']);
+        // Rota para listar as listas do usuário com a verificação do filme /listas/user
+        Route::get('/user', [ListaController::class, 'indexAddMovieToList']);
         // /api/listas/{id}/like
         Route::post('{id}/like', [ListaController::class, 'toggleLike']);
         /**
@@ -45,7 +49,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
          * GET /api/movies/{movie_id}/reviews
          */
         Route::get('/reviews', [ReviewController::class, 'index']);
-
+        // /movies/{movie_id}/user-review
+        Route::get('/user-review', [ReviewController::class, 'showMovieReview']);
         /**
          * Criar uma nova review para um filme
          * POST /api/movies/{movie_id}/reviews
@@ -77,7 +82,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/roles', [UserRoleController::class, 'listRoles']);
         Route::get('/users', [UserRoleController::class, 'listUsers']);
         Route::delete('/users/{id}', [LoginController::class, 'destroy']);
-
+        Route::post('/users/{userId}/permissions', [UserRoleController::class, 'assignPermissions']);
+        Route::get('/permissions', [UserRoleController::class,  'listPermissions']);
         // Importar único Filme pelo TMDb_id
         Route::post('/movies/single/{tmdb_id}', [MovieController::class, 'store']);
 

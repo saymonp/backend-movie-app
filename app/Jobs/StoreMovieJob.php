@@ -62,7 +62,7 @@ class StoreMovieJob implements ShouldQueue
             'tagline_en'        => 'nullable|string',
             'slug_pt'           => 'nullable|string',
             'slug_en'           => 'required|string',
-            'rating'            => 'required|numeric',
+            'rating'            => 'nullable|numeric',
             'duracao'           => 'required|integer',
             'lingua_origem'     => 'required|string|max:5',
             'release_date'      => 'required|date',
@@ -102,7 +102,6 @@ class StoreMovieJob implements ShouldQueue
                 'titulo_original',
                 'descricao_en',
                 'slug_en',
-                'rating',
                 'duracao',
                 'release_date'
             ];
@@ -202,6 +201,18 @@ class StoreMovieJob implements ShouldQueue
 
     public function failed(\Throwable $exception)
     {
-        Log::error("Job falhou fatalmente para Filme TMDB {$this->data['tmdb_id']}: " . $exception->getMessage());
+        Log::error("Job falhou fatalmente para Filme TMDB {$this->data['tmdb_id']}. Tentativas esgotadas ou erro crítico: " . $exception->getMessage());
+
+        // Busca o filme que foi criado temporariamente
+        $movie = Movie::where('tmdb_id', $this->data['tmdb_id'])->first();
+
+        if ($movie) {
+            // Se o filme ainda estiver em status de processamento ou erro, removemos do banco
+            // para evitar que registros "fantasmas" ou incompletos poluam a plataforma
+            if ($movie->status !== 'processado' || is_null($movie->titulo_original)) {
+                Log::warning("Removendo registro incompleto do banco de dados devido à falha no processamento. ID TMDB: {$this->data['tmdb_id']}");
+                $movie->delete();
+            }
+        }
     }
 }

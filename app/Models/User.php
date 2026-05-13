@@ -74,5 +74,11 @@ class User extends Authenticatable
         return $this->belongsToMany(Review::class, 'review_like');
     }
 
-    
+    /**
+     * Relacionamento: Um usuário possui muitas listas.
+     */
+    public function listas(): HasMany
+    {
+        return $this->hasMany(Lista::class);
+    }
 }

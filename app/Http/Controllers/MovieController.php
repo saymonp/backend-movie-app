@@ -253,52 +253,65 @@ class MovieController extends Controller
         $movie = Movie::with(['generos', 'diretores', 'estudios', 'paises', 'colecao'])
             ->findOrFail($id);
 
-        // --- 3. COLEÇÃO (Lógica que você já tinha) ---
+        // --- 3. COLEÇÃO ---
         $collectionMovies = collect();
         if ($movie->colecao_id) {
             $collectionMovies = Movie::where('colecao_id', $movie->colecao_id)
                 ->where('id', '!=', $movie->id)
-                ->select('id', 'titulo_original', 'titulo_br', 'titulo_en', 'poster_thumb_br', 'poster_thumb_us', 'rating', 'slug_pt', 'slug_en')
+                ->select('id', 'tmdb_id', 'titulo_original', 'titulo_br', 'titulo_en', 'poster_thumb_br', 'poster_thumb_us', 'rating', 'slug_pt', 'slug_en')
                 ->get();
 
-            // 4. Se não houver outros filmes da coleção no banco, busca no TMDB
-            // TODO verifica se os filmes estão completos, se tem imagem e títulos e rating. Se não pega do tmdb
-            if ($collectionMovies->isEmpty() && $movie->colecao->tmdb_id) {
+            // Verificação de integridade: 
+            // Se a coleção estiver vazia OU se houver filmes com dados faltando
+            $isIncomplete = $collectionMovies->contains(function ($m) {
+                return empty($m->titulo_original) ||
+                    empty($m->titulo_br) ||
+                    empty($m->titulo_en) ||
+                    empty($m->poster_thumb_br) ||
+                    empty($m->poster_thumb_us) ||
+                    is_null($m->rating);
+            });
+
+            if (($collectionMovies->isEmpty() || $isIncomplete) && $movie->colecao->tmdb_id) {
                 $tmdb = new TmdbService();
-                $tmdbResults = $tmdb->getCollectionDetails($movie->colecao->tmdb_id); // Deve retornar o array 'parts'
+                $tmdbResults = $tmdb->getCollectionDetails($movie->colecao->tmdb_id);
 
                 $collectionMovies = collect($tmdbResults)->map(function ($item) use ($movie) {
-                    // Pula o filme atual na listagem da coleção
                     if ($item['id'] == $movie->tmdb_id) return null;
 
-                    // Cria o registro básico para permitir que o usuário interaja/clique
+                    // Busca ou cria o registro para garantir que o ID do banco exista
+                    // Se já existir, o updateOrCreate atualizará os campos faltantes
                     $tempSlug = (string)rand(1000, 9999);
-                    $movieRecord = Movie::firstOrCreate(
+
+                    $movieRecord = Movie::updateOrCreate(
                         ['tmdb_id' => $item['id']],
                         [
                             'titulo_original' => $item['original_title'] ?? ($item['title'] ?? ''),
-                            'titulo_br' => $item['title'] ?? '',
+                            'titulo_br'       => $item['title'] ?? '',
                             'poster_thumb_br' => $item['poster_path'] ?? null,
-                            'rating' => $item['vote_average'] ?? 0,
-                            'colecao_id' => $movie->colecao_id, // Vincula à coleção existente
-                            'status' => 'processando',
-                            'slug_pt' => $tempSlug,
-                            'slug_en' => $tempSlug
+                            'rating'          => $item['vote_average'] ?? 0,
+                            'colecao_id'      => $movie->colecao_id,
+                            'status'          => 'processando',
+                            // Só define slug se for um registro novo (evita quebrar URLs existentes)
+                            'slug_pt'         => $tempSlug,
+                            'slug_en'         => $tempSlug
                         ]
                     );
 
-                    // Dispara o Job para cada filme da coleção que não está completo
+                    // Dispara o Job para garantir o preenchimento total (incluindo títulos em EN e posters US)
                     StoreMovieJob::dispatch(['tmdb_id' => $item['id']])->onQueue('high');
 
                     return [
-                        'id' => $movieRecord->id,
-                        'titulo_original' => $item['title'] ?? '',
+                        'id'              => $movieRecord->id,
+                        'titulo_original' => $item['original_title'] ?? ($item['title'] ?? ''),
+                        'titulo_br'       => $item['title'] ?? '',
+                        'titulo_en'       => $movieRecord->titulo_en ?? '', // O Job preencherá depois
                         'poster_thumb_br' => $item['poster_path'] ? "https://image.tmdb.org/t/p/w500" . $item['poster_path'] : null,
-                        'poster_thumb_us' => $item['poster_path'] ? "https://image.tmdb.org/t/p/w500" . $item['poster_path'] : null,
-                        'rating' => $item['vote_average'] ?? 0,
-                        'slug_pt'=> $tempSlug,
-                        'slug_en'=> $tempSlug,
-                        'status' => 'processando'
+                        'poster_thumb_us' => $movieRecord->poster_thumb_us ?? null,
+                        'rating'          => $item['vote_average'] ?? 0,
+                        'slug_pt'         => 'temp-movie',
+                        'slug_en'         => 'temp-movie',
+                        'status'          => 'processando'
                     ];
                 })->filter()->values();
             }

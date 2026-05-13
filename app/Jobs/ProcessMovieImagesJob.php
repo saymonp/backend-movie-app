@@ -70,29 +70,34 @@ class ProcessMovieImagesJob implements ShouldQueue
 
     private function downloadAndStore($url, $folder)
     {
-        // Se a URL for apenas um path (ex: /abc.jpg), precisamos do prefixo do TMDB
-        // Se você já envia a URL completa no Service, pode ignorar esta linha
-        $fullUrl = str_starts_with($url, 'http') ? $url : "https://image.tmdb.org/t/p/original{$url}";
+        // Limpeza de caracteres e barras
+        $path = ltrim(str_replace('\\', '', $url), '/');
+        if (empty($path)) return null;
+
+        $fullUrl = str_starts_with($path, 'http')
+            ? $path
+            : "https://image.tmdb.org/t/p/original/{$path}";
 
         try {
-            $response = Http::timeout(30)->get($fullUrl);
+            $response = Http::withoutVerifying()->timeout(45)->get($fullUrl);
 
             if ($response->successful()) {
                 $extension = pathinfo(parse_url($fullUrl, PHP_URL_PATH), PATHINFO_EXTENSION) ?: 'jpg';
-                $filename = "{$folder}/" . Str::uuid() . "." . $extension;
+                $filename = "{$folder}/" . \Illuminate\Support\Str::uuid() . "." . $extension;
 
-                // Correção de Visibilidade para S3
                 Storage::disk('s3')->put($filename, $response->body(), [
-                    'visibility' => 'public'
+                    'visibility' => 'public',
+                    'ContentType' => $response->header('Content-Type')
                 ]);
 
-                return $filename;
+                return $filename; // Retorna o caminho do seu S3
             }
         } catch (\Exception $e) {
             Log::error("Erro no download da imagem {$fullUrl}: " . $e->getMessage());
         }
 
-        return null;
+        // EM CASO DE ERRO: Retorna a URL original do TMDB formatada
+        return $fullUrl;
     }
 
     public function failed(\Throwable $exception)

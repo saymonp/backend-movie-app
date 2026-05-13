@@ -50,7 +50,7 @@ class ListaController extends Controller
                 'comentario' => 'nullable|string',
                 'tags' => 'nullable|array',
                 'tags.*' => 'string|max:30',
-                'movies' => 'required|array', // A lista precisa de filmes
+                'movies' => 'nullable|array', // A lista precisa de filmes
                 'movies.*.id' => 'required|integer', // Pode ser nulo se for recém-importado
             ]);
 
@@ -240,9 +240,16 @@ class ListaController extends Controller
     {
         $lista = Lista::findOrFail($id);
 
-        // Segurança: Só o dono ou Admin pode deletar
+        // 1. Segurança: Só o dono ou Admin pode deletar
         if ($request->user()->id !== $lista->user_id && !$request->user()->hasRole('admin')) {
             return response()->json(['message' => 'Não autorizado'], 403);
+        }
+
+        // 2. Proteção: Impede a remoção de listas padrão do sistema (Assistidos, etc)
+        if ($lista->is_default) {
+            return response()->json([
+                'message' => 'Listas padrão do sistema não podem ser removidas.'
+            ], 422); // 422 Unprocessable Entity para erros de regra de negócio
         }
 
         $lista->delete();
@@ -290,6 +297,51 @@ class ListaController extends Controller
             'message' => $liked ? 'Like adicionado' : 'Like removido',
             'is_liked' => $liked,
             'likes_count' => $lista->likes()->count()
+        ]);
+    }
+
+    public function indexAddMovieToList(Request $request)
+    {
+        // Garante o ID do usuário (Rota Protegida via middleware auth:sanctum)
+        $userId = $request->user()->id;
+
+        // Captura o ID do filme enviado pelo frontend
+        $movieId = $request->input('movie_id');
+
+        $listas = Lista::where('user_id', $userId)
+            ->select('id', 'titulo', 'slug', 'is_default')
+            // Verifica apenas se o filme específico está na lista, sem carregar a relação completa
+            ->withExists(['movies as movie_exists' => function ($q) use ($movieId) {
+                $q->where('movies.id', $movieId);
+            }])
+            ->orderBy('is_default', 'desc') // coloca "Assistidos" e "Ver dps" no topo
+            ->orderBy('titulo', 'asc')
+            ->get();
+
+        return response()->json($listas);
+    }
+
+    public function toggleAddToList(Request $request)
+    {
+        $request->validate([
+            'lista_id' => 'required|exists:lists,id',
+            'movie_id' => 'required|exists:movies,id',
+        ]);
+
+        $userId = $request->user()->id;
+        $lista = Lista::where('id', $request->lista_id)
+            ->where('user_id', $userId)
+            ->firstOrFail();
+
+        // O método toggle() remove se existir e adiciona se não existir
+        $result = $lista->movies()->toggle($request->movie_id);
+
+        // Verifica se foi adicionado ou removido para dar um feedback limpo
+        $attached = count($result['attached']) > 0;
+
+        return response()->json([
+            'message' => $attached ? 'Filme adicionado à lista' : 'Filme removido da lista',
+            'attached' => $attached
         ]);
     }
 }

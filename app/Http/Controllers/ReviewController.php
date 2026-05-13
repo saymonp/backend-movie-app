@@ -69,6 +69,24 @@ class ReviewController extends Controller
         return response()->json($review);
     }
 
+    public function showMovieReview(int $movieId)
+    {
+        $userId = Auth::id();
+
+        // Busca a review que pertence ao usuário e ao filme específico
+        $review = Review::with(['tags:id,nome'])
+            ->withCount('likes')
+            ->where('user_id', $userId)
+            ->where('movie_id', $movieId)
+            ->first(); // Usamos first() para retornar null se não existir, ou firstOrFail() para 404
+
+        if (!$review) {
+            return response()->json(['message' => 'Review não encontrada'], 404);
+        }
+
+        return response()->json($review);
+    }
+
     /**
      * Atualiza uma review existente.
      */
@@ -115,23 +133,29 @@ class ReviewController extends Controller
                 'tags.*' => 'string|max:30',
             ]);
 
-        // 1. Pegar o ID do usuário logado pelo Token
-            /** @var \App\Models\User $currentUser */
-            $currentUser = Auth::user();
-            $dados['user_id'] = $currentUser->id;
+            $userId = Auth::id();
 
-            // 2. Pegar o ID do filme que veio da URL
-            $dados['movie_id'] = $movie_id;
+            // 1. Busca por user_id e movie_id, se achar atualiza os 'dados', se não cria.
+            $review = Review::updateOrCreate(
+                [
+                    'user_id' => $userId,
+                    'movie_id' => $movie_id
+                ],
+                [
+                    'titulo' => $dados['titulo'],
+                    'comentario' => $dados['comentario'],
+                    'rating' => $dados['rating'],
+                ]
+            );
 
-            // 3. Criar a review
-            $review = Review::create($dados);
-
-            // 4. Sincronizar as tags
-            if ($request->filled('tags')) {
-                $review->syncTags($dados['tags']);
+            // 2. Sincronizar as tags (funciona tanto para novo quanto para editado)
+            if ($request->has('tags')) {
+                // Se as tags vierem vazias [], ele remove as antigas. Se não vierem no request, mantém as que estão.
+                $review->syncTags($dados['tags'] ?? []);
             }
 
-            return response()->json($review->load(['tags', 'user', 'movie']), 201);
+            // Retornamos 200 (OK) em vez de 201 (Created) pois pode ser uma atualização
+            return response()->json($review->load(['tags', 'user', 'movie']), 200);
         });
     }
 
