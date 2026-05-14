@@ -3,6 +3,7 @@ BEGIN;
 CREATE TABLE movies (
     id SERIAL PRIMARY KEY,
     tmdb_id INTEGER UNIQUE NOT NULL,
+    imdb_id TEXT,
     titulo_original TEXT,
 
     titulo_br TEXT,
@@ -18,6 +19,9 @@ CREATE TABLE movies (
 
     lingua_origem TEXT,
 
+    revenue BIGINT,
+    popularity NUMERIC(12, 4),
+
     -- Imagens BR
     poster_path_br TEXT,      -- Original/High
     poster_thumb_br TEXT,     -- Otimizada 
@@ -28,6 +32,8 @@ CREATE TABLE movies (
     poster_thumb_us TEXT,     -- Otimizada
 
     homepage TEXT,
+
+    status TEXT,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

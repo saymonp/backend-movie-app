@@ -33,6 +33,30 @@ class UserRoleController extends Controller
         ]);
     }
 
+    public function listPermissions()
+    {
+        return response()->json(\Spatie\Permission\Models\Permission::all());
+    }
+
+    // Atribuir permissões diretas ao usuário
+    public function assignPermissions(Request $request, $userId)
+    {
+        $request->validate([
+            'permissions' => 'required|array',
+            'permissions.*' => 'exists:permissions,name',
+        ]);
+
+        $user = User::findOrFail($userId);
+
+        // syncPermissions substitui as permissões diretas atuais pelas novas
+        $user->syncPermissions($request->permissions);
+
+        return response()->json([
+            'message' => "Permissões diretas atualizadas para {$user->name}",
+            'user' => $user->load('permissions')
+        ]);
+    }
+
     /**
      * Lista todas as roles disponíveis no sistema (útil para o select no frontend)
      */
@@ -43,6 +67,25 @@ class UserRoleController extends Controller
 
     public function listUsers()
     {
-        return response()->json(User::all());
+        // Buscamos os usuários com os relacionamentos carregados para evitar o problema de N+1
+        $users = User::with(['roles', 'permissions'])->get();
+
+        // Transformamos a coleção para que cada usuário contenha apenas os nomes das roles e permissões
+        $transformedUsers = $users->map(function ($user) {
+            return [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'email_verified_at' => $user->email_verified_at,
+                'slug' => $user->slug,
+                'is_admin' => $user->is_admin,
+                // Spatie: Retorna array de strings com os nomes das roles
+                'roles' => $user->getRoleNames(),
+                // Spatie: Retorna todas as permissões (diretas e via roles) como nomes
+                'permissions' => $user->getAllPermissions()->pluck('name'),
+            ];
+        });
+
+        return response()->json($transformedUsers);
     }
 }

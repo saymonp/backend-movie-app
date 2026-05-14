@@ -69,6 +69,7 @@ class TmdbService
 
             return [
                 'tmdb_id'         => $data['id'],
+                'imdb_id'         => $data['imdb_id'] ?? null,
                 'titulo_original' => $data['original_title'] ?? null,
                 'titulo_br'       => $ptBR['data']['title'] ?? $data['title'] ?? null,
                 'descricao_br'    => $ptBR['data']['overview'] ?? $data['overview'] ?? null,
@@ -81,6 +82,8 @@ class TmdbService
                 'lingua_origem'   => $data['original_language'] ?? 'en',
                 'release_date'    => $data['release_date'] ?? null,
                 'homepage'        => $data['homepage'] ?? null,
+                'revenue'         => $data['revenue'] ?? null,
+                'popularity'      => $data['popularity'] ?? null,
                 'slug_pt' => $slug['slug_pt'],
                 'slug_en' => $slug['slug_en'],
 
@@ -186,5 +189,32 @@ class TmdbService
         $movies = $response->json()['results'] ?? [];
 
         return $movies;
+    }
+
+    public function searchMovie($search, $lang)
+    {
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$this->token}",
+            'accept' => 'application/json',
+        ])->get("https://api.themoviedb.org/3/search/movie", [
+            'query' => $search,
+            'language' => $lang
+        ])->json('results');
+
+        return $response;
+    }
+
+    public function getCollectionDetails($collectionId, $lang = 'pt-BR')
+    {
+        $response = Http::withToken($this->token)
+            ->get("https://api.themoviedb.org/3/collection/{$collectionId}", [
+                'language' => $lang
+            ]);
+
+        if ($response->successful()) {
+            return $response->json()['parts']; // Retorna a lista de filmes
+        }
+
+        return [];
     }
 }
