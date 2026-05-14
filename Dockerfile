@@ -1,4 +1,4 @@
-FROM dunglas/frankenphp:1.1-php8.4
+FROM dunglas/frankenphp:php8.4
 
 # Extensões essenciais: pdo_pgsql (DB), pcntl (Worker/Fila), opcache (Velocidade)
 RUN install-php-extensions \
