@@ -23,6 +23,24 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - s3data:/data
+      
+# O Worker das Filas (Jobs)
+  worker:
+    build: .
+    command: php artisan queue:work --queue=high,default,translation,images
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+
+  # O Scheduler (Cron das 3h da manhã)
+  scheduler:
+    build: .
+    command: php artisan schedule:work
+    volumes:
+      - .:/app
+    depends_on:
+      - db
 
 volumes:
   pgdata:
