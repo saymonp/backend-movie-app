@@ -23,8 +23,6 @@ RUN chown -R www-data:www-data storage bootstrap/cache
 ENV PORT=8080
 EXPOSE 8080
 
-# O FrankenPHP usa a variável de ambiente FRANKENPHP_HTTP_PORT por padrão
-ENV FRANKENPHP_HTTP_PORT=8080
 
 # Comando
-CMD ["frankenphp", "php-server"]
+CMD ["frankenphp", "php-server", ":$PORT"]
