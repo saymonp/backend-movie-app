@@ -28,7 +28,7 @@ class ProcessMovieImagesJob implements ShouldQueue
 
         $updates = [];
 
-        // 1. Processar imagens principais do Filme
+        // 1. Processar imagens principais do Filme -> DISCO: 's3'
         $mainMap = [
             'poster_path_br',
             'poster_thumb_br',
@@ -39,38 +39,40 @@ class ProcessMovieImagesJob implements ShouldQueue
 
         foreach ($mainMap as $key) {
             if (!empty($this->imageUrls[$key])) {
-                $path = $this->downloadAndStore($this->imageUrls[$key], 'posters');
+                // Passamos 's3' como o disco para os posters
+                $path = $this->downloadAndStore($this->imageUrls[$key], 'posters', 's3');
                 if ($path) $updates[$key] = $path;
             }
         }
 
-        // 2. Processar imagens da Coleção (se existir no array de entrada e no filme)
+        // 2. Processar imagens da Coleção -> DISCO: 's3_collections'
         if (!empty($this->imageUrls['colecao']) && $this->movie->colecao) {
             $colecaoUpdates = [];
             $colMap = ['poster_path', 'poster_thumb', 'backdrop_path'];
 
             foreach ($colMap as $colKey) {
                 if (!empty($this->imageUrls['colecao'][$colKey])) {
-                    $path = $this->downloadAndStore($this->imageUrls['colecao'][$colKey], 'collections');
+                    // Passamos 's3_collections' como o disco para coleções
+                    $path = $this->downloadAndStore($this->imageUrls['colecao'][$colKey], 'collections', 's3_collections');
                     if ($path) $colecaoUpdates[$colKey] = $path;
                 }
             }
 
             if (!empty($colecaoUpdates)) {
-                // Atualiza o modelo de coleção relacionado
                 $this->movie->colecao->update($colecaoUpdates);
             }
         }
 
-        // Atualiza os campos do filme
         if (!empty($updates)) {
             $this->movie->update($updates);
         }
     }
 
-    private function downloadAndStore($url, $folder)
+    /**
+     * Adicionado o parâmetro $disk para alternar entre os buckets
+     */
+    private function downloadAndStore($url, $folder, $disk)
     {
-        // Limpeza de caracteres e barras
         $path = ltrim(str_replace('\\', '', $url), '/');
         if (empty($path)) return null;
 
@@ -83,20 +85,22 @@ class ProcessMovieImagesJob implements ShouldQueue
 
             if ($response->successful()) {
                 $extension = pathinfo(parse_url($fullUrl, PHP_URL_PATH), PATHINFO_EXTENSION) ?: 'jpg';
-                $filename = "{$folder}/" . \Illuminate\Support\Str::uuid() . "." . $extension;
+                $filename = "{$folder}/" . Str::uuid() . "." . $extension;
 
-                Storage::disk('s3')->put($filename, $response->body(), [
+                // Usamos o disco dinâmico definido na chamada do método
+                Storage::disk($disk)->put($filename, $response->body(), [
                     'visibility' => 'public',
                     'ContentType' => $response->header('Content-Type')
                 ]);
 
-                return $filename; // Retorna o caminho do seu S3
+                // Retorna a URL final do arquivo no S3 para salvar no banco
+                /** @disregard P1013 Undefined method */
+                return Storage::disk($disk)->url($filename);
             }
         } catch (\Exception $e) {
             Log::error("Erro no download da imagem {$fullUrl}: " . $e->getMessage());
         }
 
-        // EM CASO DE ERRO: Retorna a URL original do TMDB formatada
         return $fullUrl;
     }
 
