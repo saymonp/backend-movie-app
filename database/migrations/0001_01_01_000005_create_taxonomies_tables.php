@@ -10,23 +10,23 @@ return new class extends Migration {
         Schema::create('generos', function (Blueprint $table) {
             $table->id();
             $table->integer('tmdb_id')->unique();
-            $table->text('nome_pt')->unique();
-            $table->text('nome_en')->unique();
+            $table->string('nome_pt')->unique();
+            $table->string('nome_en')->unique();
         });
 
         Schema::create('estudios', function (Blueprint $table) {
             $table->id();
-            $table->text('nome')->unique();
+            $table->string('nome')->unique();
         });
 
         Schema::create('diretores', function (Blueprint $table) {
             $table->id();
-            $table->text('nome')->unique();
+            $table->string('nome')->unique();
         });
 
         Schema::create('paises', function (Blueprint $table) {
             $table->id();
-            $table->text('nome')->unique();
+            $table->string('nome')->unique();
         });
     }
 
