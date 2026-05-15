@@ -24,7 +24,7 @@ return new class extends Migration
 
             // EN
             $table->text('titulo_en')->nullable();
-            $table->text('descricao_en');
+            $table->text('descricao_en')->nullable();
             $table->text('tagline_en')->nullable();
 
             $table->decimal('rating', 3, 1)->nullable();
