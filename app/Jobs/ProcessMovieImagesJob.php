@@ -89,7 +89,6 @@ class ProcessMovieImagesJob implements ShouldQueue
 
                 // Usamos o disco dinâmico definido na chamada do método
                 Storage::disk($disk)->put($filename, $response->body(), [
-                    'visibility' => 'public',
                     'ContentType' => $response->header('Content-Type')
                 ]);
 
