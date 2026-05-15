@@ -28,7 +28,7 @@ return new class extends Migration
             $table->text('tagline_en')->nullable();
 
             $table->decimal('rating', 3, 1)->nullable();
-            $table->integer('duracao');
+            $table->integer('duracao')->nullable();
             $table->text('lingua_origem')->nullable();
             $table->bigInteger('revenue')->nullable();
             $table->decimal('popularity', 12, 4)->nullable();
@@ -46,7 +46,7 @@ return new class extends Migration
             // Slugs e Datas
             $table->text('slug_pt')->unique()->nullable();
             $table->text('slug_en')->unique()->nullable();
-            $table->date('release_date');
+            $table->date('release_date')->nullable();
 
             // FK Coleção
             $table->foreignId('colecao_id')->nullable()->constrained('colecoes')->onDelete('set null');
