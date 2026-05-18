@@ -13,7 +13,6 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Bus\Batchable;
-use Illuminate\Support\Facades\Cache;
 use App\Services\TmdbService;
 
 class StoreMovieJob implements ShouldQueue
@@ -33,64 +32,65 @@ class StoreMovieJob implements ShouldQueue
     public function handle(): void
     {
         $tmdb = new TmdbService();
-
         $generos_ids = $tmdb->getMovieGeneros();
 
         // 1. Obter detalhes
         $movieResponse = $tmdb->getMovieDetails($this->data['tmdb_id'], $generos_ids);
 
         if (!$movieResponse) {
+            // Se o TMDB falhar, limpa qualquer lixo antes de falhar o job
+            $ghostMovie = Movie::where('tmdb_id', $this->data['tmdb_id'])->first();
+            if ($ghostMovie) {
+                Log::warning("Removendo filme vazio por falha de comunicação com o TMDB. ID TMDB: {$this->data['tmdb_id']}");
+                $ghostMovie->delete();
+            }
 
-            Movie::where('tmdb_id', $this->data['tmdb_id'])
-                ->update([
-                    'status' => 'erro'
-                ]);
-
-            throw new \Exception('TMDB não retornou dados');
+            throw new \Exception("TMDB não retornou dados para o ID: {$this->data['tmdb_id']}");
         }
-        //Log::info('Movie response:', $movieResponse);
+
         // 2. Validação
         $validator = Validator::make($movieResponse, [
-            'tmdb_id' => 'required|integer',
-            'imdb_id'           => 'nullable|string',
-            'titulo_original'   => 'required|string',
-            'titulo_br'         => 'nullable|string',
-            'titulo_en'         => 'nullable|string',
-            'descricao_br'      => 'nullable|string',
-            'descricao_en'      => 'required|string',
-            'tagline_br'        => 'nullable|string',
-            'tagline_en'        => 'nullable|string',
-            'slug_pt'           => 'nullable|string',
-            'slug_en'           => 'required|string',
-            'rating'            => 'nullable|numeric',
-            'duracao'           => 'required|integer',
-            'lingua_origem'     => 'required|string|max:5',
-            'release_date'      => 'required|date',
-            'homepage'          => 'nullable|url',
-            'poster_path_br'    => 'nullable|url',
-            'poster_thumb_br'   => 'nullable|url',
-            'backdrop_path'     => 'nullable|url',
-            'poster_path_us'    => 'nullable|url',
-            'poster_thumb_us'   => 'nullable|url',
-            'generos'           => 'nullable|array',
-            'diretores'         => 'nullable|array',
-            'estudios'          => 'nullable|array',
-            'paises'            => 'nullable|array',
-            'revenue'           => 'nullable|integer',
-            'popularity'        => 'nullable|numeric',
-            'status'            =>  'nullable|string',
-            'colecao'           => 'nullable|array',
-            'colecao.nome'      => 'required_with:colecao|string',
-            'colecao.tmdb_id'   => 'required_with:colecao|integer',
-            'colecao.poster_path' => 'nullable|string',
-            'colecao.poster_thumb' => 'nullable|string',
+            'tmdb_id'               => 'required|integer',
+            'imdb_id'               => 'nullable|string',
+            'titulo_original'       => 'required|string',
+            'titulo_br'             => 'nullable|string',
+            'titulo_en'             => 'nullable|string',
+            'descricao_br'          => 'nullable|string',
+            'descricao_en'          => 'required|string',
+            'tagline_br'            => 'nullable|string',
+            'tagline_en'            => 'nullable|string',
+            'slug_pt'               => 'nullable|string',
+            'slug_en'               => 'required|string',
+            'rating'                => 'nullable|numeric',
+            'duracao'               => 'required|integer',
+            'lingua_origem'         => 'required|string|max:5',
+            'release_date'          => 'required|date',
+            'homepage'              => 'nullable|url',
+            'poster_path_br'        => 'nullable|url',
+            'poster_thumb_br'       => 'nullable|url',
+            'backdrop_path'         => 'nullable|url',
+            'poster_path_us'        => 'nullable|url',
+            'poster_thumb_us'       => 'nullable|url',
+            'generos'               => 'nullable|array',
+            'diretores'             => 'nullable|array',
+            'estudios'              => 'nullable|array',
+            'paises'                => 'nullable|array',
+            'revenue'               => 'nullable|integer',
+            'popularity'            => 'nullable|numeric',
+            'status'                => 'nullable|string',
+            'colecao'               => 'nullable|array',
+            'colecao.nome'          => 'required_with:colecao|string',
+            'colecao.tmdb_id'       => 'required_with:colecao|integer',
+            'colecao.poster_path'   => 'nullable|string',
+            'colecao.poster_thumb'  => 'nullable|string',
             'colecao.backdrop_path' => 'nullable|string'
         ]);
 
         if ($validator->fails()) {
-            dump('Validator Falhou', $validator->errors()->first());
-            Log::warning("Validação falhou para filme TMDB {$this->data['tmdb_id']}: " . $validator->errors()->first());
-            return;
+            Log::error("Validação falhou para filme TMDB {$this->data['tmdb_id']}: " . $validator->errors()->first());
+            
+            // Lança uma exceção, força o Job a ir para failed() e apagar o registro vazio.
+            throw new \Exception("Dados inválidos vindos do TMDB: " . $validator->errors()->first());
         }
 
         $validated = $validator->validated();
@@ -108,7 +108,7 @@ class StoreMovieJob implements ShouldQueue
 
             foreach ($requiredFields as $field) {
                 if (empty($validated[$field])) {
-                    throw new \Exception("Campo obrigatório vazio: {$field}");
+                    throw new \Exception("Campo obrigatório vazio na transação: {$field}");
                 }
             }
 
@@ -143,6 +143,7 @@ class StoreMovieJob implements ShouldQueue
                 'popularity' => $validated['popularity'],
             ];
 
+            // Filtra nulos e vazios
             $movieData = array_filter(
                 $movieData,
                 fn($value) => !is_null($value) && $value !== ''
@@ -162,28 +163,30 @@ class StoreMovieJob implements ShouldQueue
 
             return $movieRecord;
         });
+
         $movie->refresh();
-        Log::info('Movie criado?', ['movie' => $movie]);
-        if ($movie) {
+
+        // Verificação final antes de despachar os sub-jobs
+        if ($movie && !is_null($movie->titulo_original) && $movie->status === 'processado') {
             $imageUrls = $this->createImageArray($validated);
 
             Log::info("Despachando imagens para o filme ID: {$movie->id}");
-
             ProcessMovieImagesJob::dispatch($movie, $imageUrls)->onQueue('images');
-        }
 
-        // 4. Tradução (Se não tem descrição em PT, mas tem em EN)
-        if (!filled($validated['descricao_br']) && filled($validated['descricao_en'])) {
-
-            Log::info("Despachando tradução para o filme ID: {$movie->id}");
-
-            // Enviamos o model $movie e o texto original
-            ProcessMovieTranslationJob::dispatch($movie, $validated['descricao_en'])
-                ->onQueue('translation');
+            // 4. Tradução (Se não tem descrição em PT, mas tem em EN)
+            if (!filled($validated['descricao_br']) && filled($validated['descricao_en'])) {
+                Log::info("Despachando tradução para o filme ID: {$movie->id}");
+                ProcessMovieTranslationJob::dispatch($movie, $validated['descricao_en'])->onQueue('translation');
+            }
+        } else {
+            Log::warning("Filme salvo incorretamente detectado no fluxo principal. Removendo da base. TMDB: {$this->data['tmdb_id']}");
+            if ($movie) {
+                $movie->delete();
+            }
         }
     }
 
-    function createImageArray($dataValidated)
+    private function createImageArray($dataValidated)
     {
         return [
             'poster_path_br'  => $dataValidated['poster_path_br'] ?? null,
@@ -199,18 +202,20 @@ class StoreMovieJob implements ShouldQueue
         ];
     }
 
+    /**
+     * Acionado automaticamente quando o Job falha em definitivo (esgota as 3 tentativas)
+     * ou encontra uma Exception fatal no meio do handle().
+     */
     public function failed(\Throwable $exception)
     {
-        Log::error("Job falhou fatalmente para Filme TMDB {$this->data['tmdb_id']}. Tentativas esgotadas ou erro crítico: " . $exception->getMessage());
+        Log::critical("Job falhou fatalmente para Filme TMDB {$this->data['tmdb_id']}. Removendo possíveis dados nulos: " . $exception->getMessage());
 
-        // Busca o filme que foi criado temporariamente
         $movie = Movie::where('tmdb_id', $this->data['tmdb_id'])->first();
 
         if ($movie) {
-            // Se o filme ainda estiver em status de processamento ou erro, removemos do banco
-            // para evitar que registros "fantasmas" ou incompletos poluam a plataforma
-            if ($movie->status !== 'processado' || is_null($movie->titulo_original)) {
-                Log::warning("Removendo registro incompleto do banco de dados devido à falha no processamento. ID TMDB: {$this->data['tmdb_id']}");
+            // Se o título original sumiu, se está nulo, ou se o status ficou preso em processando, deleta.
+            if ($movie->status !== 'processado' || is_null($movie->titulo_original) || empty($movie->titulo_original)) {
+                Log::warning("Limpando registro fantasma incompleto do banco de dados. ID TMDB: {$this->data['tmdb_id']}");
                 $movie->delete();
             }
         }

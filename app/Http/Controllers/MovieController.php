@@ -148,7 +148,6 @@ class MovieController extends Controller
         $tmdb = new TmdbService();
 
         $tmdbResults = $tmdb->searchMovie($search, $lang);
-
         if (!empty($tmdbResults)) {
             // Pegamos o ID do primeiro resultado relevante
 
@@ -156,7 +155,13 @@ class MovieController extends Controller
             $temp_slug = (string)rand(1, 999);
             $movieRecord = Movie::firstOrCreate(
                 ['tmdb_id' => $tmdbId], // Busca por isso
-                ['titulo_original' => $tmdbResults[0]['original_title'], 'slug_pt' => $temp_slug, 'slug_en' => $temp_slug, 'status' => 'processando'] // Se não achar, cria com isso
+                [
+                    'titulo_original' => $tmdbResults[0]['original_title'],
+                    'slug_pt' => $temp_slug,
+                    'slug_en' => $temp_slug,
+                    'poster_thumb_br' => $tmdbResults[0]['poster_path'] ? "https://image.tmdb.org/t/p/w500" . $tmdbResults[0]['poster_path'] : null,
+                    'status' => 'processando'
+                ]
             );
             // 2. Dispara o Job de alta prioridade
             // onQueue('high') permite que esse job passe na frente de outros
@@ -165,7 +170,9 @@ class MovieController extends Controller
 
             return response()->json([
                 'message' => 'Filme não encontrado localmente, mas localizado no TMDB. Estamos importando agora!',
-                'temp_result' => $tmdbResults[0], // Opcional: envia os dados básicos para o front exibir um "loading"
+                'temp_result' => $tmdbResults[0],
+                'poster_thumb_br' => $tmdbResults[0]['poster_path'] ? "https://image.tmdb.org/t/p/w500" . $tmdbResults[0]['poster_path'] : null,
+                'poster_thumb_us' => $tmdbResults[0]['poster_path'] ? "https://image.tmdb.org/t/p/w500" . $tmdbResults[0]['poster_path'] : null,
                 'status' => 'processando',
                 'id' => $movieRecord->id,
                 'tmdb_id' => $tmdbResults[0]['id'],
@@ -264,12 +271,9 @@ class MovieController extends Controller
             // Verificação de integridade: 
             // Se a coleção estiver vazia OU se houver filmes com dados faltando
             $isIncomplete = $collectionMovies->contains(function ($m) {
-                return empty($m->titulo_original) ||
-                    empty($m->titulo_br) ||
-                    empty($m->titulo_en) ||
-                    empty($m->poster_thumb_br) ||
-                    empty($m->poster_thumb_us) ||
-                    is_null($m->rating);
+                return $m->status !== 'processado' ||
+                    empty($m->titulo_original) ||
+                    empty($m->slug_en);
             });
 
             if (($collectionMovies->isEmpty() || $isIncomplete) && $movie->colecao->tmdb_id) {
@@ -279,8 +283,26 @@ class MovieController extends Controller
                 $collectionMovies = collect($tmdbResults)->map(function ($item) use ($movie) {
                     if ($item['id'] == $movie->tmdb_id) return null;
 
+                    // Busca se o filme já existe para obter o status atual
+                    $existingMovie = Movie::where('tmdb_id', $item['id'])->first();
+
+                    // Se o filme já existe E está processado, não fazemos nada e retornamos ele formatado
+                    if ($existingMovie && $existingMovie->status === 'processado') {
+                        return [
+                            'id'              => $existingMovie->id,
+                            'titulo_original' => $existingMovie->titulo_original,
+                            'titulo_br'       => $existingMovie->titulo_br,
+                            'titulo_en'       => $existingMovie->titulo_en,
+                            'poster_thumb_br' => $existingMovie->poster_thumb_br,
+                            'poster_thumb_us' => $existingMovie->poster_thumb_us,
+                            'rating'          => $existingMovie->rating,
+                            'slug_pt'         => $existingMovie->slug_pt,
+                            'slug_en'         => $existingMovie->slug_en,
+                            'status'          => 'processado'
+                        ];
+                    }
+                    // Se chegou aqui, o filme é novo ou falhou antes
                     // Busca ou cria o registro para garantir que o ID do banco exista
-                    // Se já existir, o updateOrCreate atualizará os campos faltantes
                     $tempSlug = (string)rand(1000, 9999);
 
                     $movieRecord = Movie::updateOrCreate(

@@ -46,8 +46,9 @@ class ListaController extends Controller
     {
         return DB::transaction(function () use ($request) {
             $dados = $request->validate([
-                'titulo' => 'required|string|max:255', // Deixei required pois uma lista sem nome é difícil de achar
+                'titulo' => 'required|string|max:255',
                 'comentario' => 'nullable|string',
+                'slug' => 'required|string',
                 'tags' => 'nullable|array',
                 'tags.*' => 'string|max:30',
                 'movies' => 'nullable|array', // A lista precisa de filmes
@@ -64,6 +65,7 @@ class ListaController extends Controller
                 'titulo' => $dados['titulo'],
                 'comentario' => $dados['comentario'],
                 'user_id' => $dados['user_id'],
+                'slug' => $dados['slug']
             ]);
 
             // 3. Sincronizar as tags
