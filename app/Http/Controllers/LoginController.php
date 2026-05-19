@@ -36,7 +36,7 @@ class LoginController extends Controller
         // O frontend captura o token e guarda no localStorage
         $frontend = config('services.google.redirect');
 
-        return redirect($frontend."/auth/success?token={$apiToken}");
+        return redirect($frontend . "/auth/success?token={$apiToken}");
     }
 
     public function register(Request $request)
@@ -44,22 +44,29 @@ class LoginController extends Controller
         $dados = $request->validate([
             'name' => 'required|string',
             'email' => 'required|email|unique:users',
-            'password' => 'required|string|min:6'
+            'password' => 'required|string|min:6',
+            'termos_versao' => 'required|numeric',
+            'aceitou_termos' => 'required|boolean'
         ]);
+        if ($dados['aceitou_termos'] === true) {
+            $dados['password'] = Hash::make($dados['password']);
 
-        $dados['password'] = Hash::make($dados['password']);
+            $user = User::create($dados);
 
-        $user = User::create($dados);
+            // Todo usuário registrado manualmente começa como 'user'
+            $user->assignRole('user');
+            $apiToken = $user->createToken('auth_token')->plainTextToken;
 
-        // Todo usuário registrado manualmente começa como 'user'
-        $user->assignRole('user');
-        $apiToken = $user->createToken('auth_token')->plainTextToken;
-
-        return response()->json([
-            'access_token' => $apiToken,
-            'token_type' => 'Bearer',
-            'user' => $user->load('roles')
-        ], 201);
+            return response()->json([
+                'access_token' => $apiToken,
+                'token_type' => 'Bearer',
+                'user' => $user->load('roles')
+            ], 201);
+        } else {
+            return response()->json([
+                'message' => 'Os termos precisam ser aceitos'
+            ], 400);
+        }
     }
 
     public function login(Request $request)
