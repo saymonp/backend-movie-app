@@ -53,8 +53,6 @@ class Lista extends Model
     // Ao criar sincroniza Tags
     public function syncTags($tags)
     {
-        if (empty($tags)) return;
-
         $ids = collect($tags)->map(function ($nome) {
             $record = Tag::firstOrCreate(['nome' => trim($nome)]);
             return $record->id;
