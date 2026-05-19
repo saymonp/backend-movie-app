@@ -32,9 +32,11 @@ class LoginController extends Controller
 
         $apiToken = $user->createToken('auth_token')->plainTextToken;
 
-        // Redireciona para o seu frontend (ex: localhost:3000) levando o token na URL
-        // O seu frontend então captura esse token e guarda no localStorage
-        return redirect("http://localhost:3000/auth/success?token={$apiToken}");
+        // Redireciona para o frontendlevando o token na URL
+        // O frontend captura o token e guarda no localStorage
+        $frontend = config('services.google.redirect');
+
+        return redirect($frontend."/auth/success?token={$apiToken}");
     }
 
     public function register(Request $request)

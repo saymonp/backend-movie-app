@@ -153,3 +153,4 @@ Route::get('/movies/{id}/full-details', [MovieController::class, 'showFull']);
  */
 Route::post('/register', [LoginController::class, 'register']);
 Route::post('/login', [LoginController::class, 'login']);
+Route::post('/auth/google/callback', [LoginController::class, 'handleGoogleCallback']);

@@ -102,7 +102,6 @@ class StoreMovieJob implements ShouldQueue
                 'titulo_original',
                 'descricao_en',
                 'slug_en',
-                'duracao',
                 'release_date'
             ];
 
