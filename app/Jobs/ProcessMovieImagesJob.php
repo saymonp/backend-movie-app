@@ -92,9 +92,8 @@ class ProcessMovieImagesJob implements ShouldQueue
                     'ContentType' => $response->header('Content-Type')
                 ]);
 
-                // Retorna a URL final do arquivo no S3 para salvar no banco
-                /** @disregard P1013 Undefined method */
-                return Storage::disk($disk)->url($filename);
+                // Retorna o path do arquivo do S3 para salvar no banco
+                return "/" . $filename;
             }
         } catch (\Exception $e) {
             Log::error("Erro no download da imagem {$fullUrl}: " . $e->getMessage());

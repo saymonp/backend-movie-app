@@ -123,4 +123,14 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Credenciais do Administrador Padrão (Seeders)
+    |--------------------------------------------------------------------------
+    */
+    'admin' => [
+        'email' => env('ADMIN_EMAIL', 'admin@filmeiro.com'),
+        'password' => env('ADMIN_PASSWORD', 'password'),
+    ],
+
 ];

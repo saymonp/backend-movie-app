@@ -49,11 +49,14 @@ class RoleSeeder extends Seeder
 
         // 5. Criar o Usuário Admin
         // Usamos updateOrCreate para não dar erro de e-mail duplicado ao rodar o seeder de novo
+        $email = config('app.admin.email');
+        $password = config('app.admin.password');
+
         $admin = User::updateOrCreate(
-            ['email' => 'admin@example.com'],
+            ['email' => $email],
             [
                 'name' => 'Admin User',
-                'password' => bcrypt('password'),
+                'password' => bcrypt($password),
                 'email_verified_at' => now(),
                 'slug' => 'Adm'
             ]

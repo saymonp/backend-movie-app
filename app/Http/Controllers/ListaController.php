@@ -7,6 +7,7 @@ use App\Models\Lista;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Movie;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ListaController extends Controller
 {
@@ -46,12 +47,14 @@ class ListaController extends Controller
     {
         return DB::transaction(function () use ($request) {
             $dados = $request->validate([
-                'titulo' => 'required|string|max:255', // Deixei required pois uma lista sem nome é difícil de achar
+                'titulo' => 'required|string|max:255',
                 'comentario' => 'nullable|string',
+                'slug' => 'required|string',
                 'tags' => 'nullable|array',
                 'tags.*' => 'string|max:30',
                 'movies' => 'nullable|array', // A lista precisa de filmes
                 'movies.*.id' => 'required|integer', // Pode ser nulo se for recém-importado
+                'publica' => 'required|boolean'
             ]);
 
             // 1. Pegar o ID do usuário logado
@@ -64,6 +67,8 @@ class ListaController extends Controller
                 'titulo' => $dados['titulo'],
                 'comentario' => $dados['comentario'],
                 'user_id' => $dados['user_id'],
+                'slug' => $dados['slug'],
+                'publica' => $dados['publica']
             ]);
 
             // 3. Sincronizar as tags
@@ -109,23 +114,22 @@ class ListaController extends Controller
                         ->limit(4);
                 }
             ])
-            ->withCount(['likes', 'movies']) // Adicionado movies_count aqui
-            ->withExists(['likes as is_liked' => function ($l) use ($userId) {
-                $l->where('user_id', $userId);
-            }]);
+            ->withCount(['likes', 'movies']); // Adicionado movies_count aqui
 
         // 2. Lógica de Privacidade e Filtro de Usuário (user_only)
         if ($request->boolean('user_only') && $userId) {
             $query->where('user_id', $userId);
         } else {
-            $query->where(function ($q) use ($userId) {
-                $q->where('publica', true);
-                if ($userId) {
-                    $q->orWhere('user_id', $userId);
-                }
-            });
+            $query->where('publica', true);
         }
 
+        if ($userId) {
+            $query->withExists(['likes as is_liked' => function ($l) use ($userId) {
+                $l->where('user_id', $userId);
+            }]);
+        }
+
+        Log::info($query->toRawSql());
         // 3. Filtros de Busca (Texto e Tags)
         if ($request->filled('search')) {
             $search = $request->input('search');
@@ -205,14 +209,16 @@ class ListaController extends Controller
                 'comentario' => 'nullable|string',
                 'tags.*' => 'nullable|string|max:30',
                 'movies' => 'nullable|array',
-                'movies.*' => 'exists:movies,id'
+                'movies.*' => 'exists:movies,id',
+                'publica' => 'nullable|boolean'
             ]);
 
             $lista->update($dados);
 
             // Atualiza as tags na pivot
-            if ($request->filled('tags')) {
-                $lista->syncTags($dados['tags']);
+            if ($request->has('tags')) {
+                $tagsInput = $request->input('tags') ?? [];
+                $lista->syncTags($tagsInput);
             }
 
             // Atualiza os filmes na pivot
