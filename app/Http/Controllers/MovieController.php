@@ -145,7 +145,7 @@ class MovieController extends Controller
     protected function handleMovieNotFound($search, $lang)
     {
         // 1. Pesquisa rápida no TMDB (apenas para validar se existe)
-        $tmdb = new TmdbService();
+        $tmdb = app(TmdbService::class);
 
         $tmdbResults = $tmdb->searchMovie($search, $lang);
         if (!empty($tmdbResults)) {
