@@ -259,13 +259,13 @@ class MovieController extends Controller
 
         $movie = Movie::with(['generos', 'diretores', 'estudios', 'paises', 'colecao'])
             ->findOrFail($id);
-
+        
         // --- 3. COLEÇÃO ---
         $collectionMovies = collect();
         if ($movie->colecao_id) {
             $collectionMovies = Movie::where('colecao_id', $movie->colecao_id)
                 ->where('id', '!=', $movie->id)
-                ->select('id', 'tmdb_id', 'titulo_original', 'titulo_br', 'titulo_en', 'poster_thumb_br', 'poster_thumb_us', 'rating', 'slug_pt', 'slug_en')
+                ->select('id', 'tmdb_id', 'status', 'titulo_original', 'titulo_br', 'titulo_en', 'poster_thumb_br', 'poster_thumb_us', 'rating', 'slug_pt', 'slug_en')
                 ->get();
 
             // Verificação de integridade: 
