@@ -276,10 +276,10 @@ class MovieController extends Controller
                     empty($m->slug_en);
             });
 
-            if (($collectionMovies->isEmpty() || $isIncomplete) && $movie->colecao->tmdb_id) {
-                $tmdb = new TmdbService();
+            if (($collectionMovies->isEmpty() || $isIncomplete) && $movie->colecao->tmdb_id) {   
+                $tmdb = app(TmdbService::class);
                 $tmdbResults = $tmdb->getCollectionDetails($movie->colecao->tmdb_id);
-
+                
                 $collectionMovies = collect($tmdbResults)->map(function ($item) use ($movie) {
                     if ($item['id'] == $movie->tmdb_id) return null;
 
@@ -300,7 +300,7 @@ class MovieController extends Controller
                             'slug_en'         => $existingMovie->slug_en,
                             'status'          => 'processado'
                         ];
-                    }
+                    }     
                     // Se chegou aqui, o filme é novo ou falhou antes
                     // Busca ou cria o registro para garantir que o ID do banco exista
                     $tempSlug = (string)rand(1000, 9999);
@@ -319,7 +319,6 @@ class MovieController extends Controller
                             'slug_en'         => $tempSlug
                         ]
                     );
-
                     // Dispara o Job para garantir o preenchimento total (incluindo títulos em EN e posters US)
                     StoreMovieJob::dispatch(['tmdb_id' => $item['id']])->onQueue('high');
 

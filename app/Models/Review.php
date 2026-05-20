@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Review extends Model
 {
+    use HasFactory;
+    
     protected $fillable = ['titulo', 'comentario', 'rating', 'user_id', 'movie_id'];
 
     protected $casts = [

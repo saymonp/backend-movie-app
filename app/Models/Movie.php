@@ -40,7 +40,8 @@ class Movie extends Model
         'slug_en',
         'release_date',
         'revenue',
-        'popularity'
+        'popularity',
+        'status'
     ];
 
     // Casts ajudam o Laravel a converter tipos do banco para o PHP
