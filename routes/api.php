@@ -37,7 +37,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/{id}', [ListaController::class, 'update']);
         /**
          * Deletar uma lista (Dono ou Admin)
-         * DELETE /api/lista/{id}
+         * DELETE /api/listas/{id}
          */
         Route::delete('/{id}', [ListaController::class, 'destroy']);
     });

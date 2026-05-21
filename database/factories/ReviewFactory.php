@@ -24,7 +24,7 @@ class ReviewFactory extends Factory
             'comentario' => $this->faker->paragraph(),
             'rating' => $this->faker->numberBetween(1, 5),
 
-            // Em vez de números aleatórios, criamos registros válidos automaticamente
+            // Registros válidos automaticamente
             'user_id' => User::factory(),
             'movie_id' => Movie::factory(),
         ];
