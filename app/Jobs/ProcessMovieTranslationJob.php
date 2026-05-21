@@ -18,7 +18,7 @@ class ProcessMovieTranslationJob implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct(protected Movie $movie, protected string $textoOriginal, protected string $target = 'pt')
+    public function __construct(public Movie $movie, public string $textoOriginal, public string $target = 'pt')
     {
         //
     }
@@ -41,26 +41,27 @@ class ProcessMovieTranslationJob implements ShouldQueue
 
     protected function traduzir($texto, $target)
     {
-        // TODO Criar ServiceTranslate
         try {
-            $apiKey = config('services.google.translation_key'); // Ou env('GOOGLE_API_KEY')
+            $apiKey = config('services.google.translation_key');
 
             $response = Http::post('https://translation.googleapis.com/language/translate/v2', [
-                // A Google API aceita os parâmetros no corpo ou na query
                 'q' => $texto,
                 'target' => $target,
-                'format' => 'text', // 'text' ou 'html'
+                'format' => 'text',
             ], [
                 'key' => $apiKey
             ]);
 
             if ($response->successful()) {
-                $response->json('data.translations.0.translatedText');
+                // CORREÇÃO: Adicionado 'return' antes de buscar o JSON
+                return $response->json('data.translations.0.translatedText');
             }
 
             Log::error('Erro na resposta da tradução: ' . $response->body());
         } catch (\Exception $e) {
             Log::error('Erro ao traduzir: ' . $e->getMessage());
         }
+
+        return null; // Retorna nulo caso aconteça alguma falha ou Exception
     }
 }
