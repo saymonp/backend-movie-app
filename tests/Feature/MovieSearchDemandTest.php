@@ -99,4 +99,44 @@ class MovieSearchDemandTest extends TestCase
         // Garante que nenhum Job foi gerado
         Queue::assertNothingPushed();
     }
+
+    /**
+     * Cenário 3: O filme já existe no banco de dados local.
+     * Deve retornar a lista com o filme direto do banco (Status 200 OK)
+     * e NENHUMA chamada ao TMDB ou Fila deve ser feita.
+     */
+    public function test_busca_retorna_filme_direto_do_banco_se_ele_ja_existir(): void
+    {
+        Queue::fake();
+
+        $searchQuery = 'Matrix';
+
+        // 1. Criar o filme e o relacionamento com o diretor no banco local para a busca ILIKE encontrar
+        $movie = Movie::factory()->create([
+            'titulo_br' => 'The Matrix',
+            'titulo_original' => 'The Matrix',
+            'release_date' => '1999-03-31',
+            'status' => 'processado'
+        ]);
+
+        // 2. Mockar o TmdbService para GARANTIR que ele NÃO será chamado
+        // Se o controlador tentar chamar o TMDB, o Mockery vai quebrar o teste dizendo "shouldNotReceive"
+        $this->mock(TmdbService::class, function (MockInterface $mock) {
+            $mock->shouldNotReceive('searchMovie');
+        });
+
+        // 3. Executar a requisição GET
+        $response = $this->getJson("/api/movies/listas?search={$searchQuery}");
+
+        // 4. Asserções do Response HTTP (Status 200 OK)
+        $response->assertStatus(200);
+        
+        // Verifica se a resposta é um array contendo o filme criado
+        $response->assertJsonCount(1);
+        $response->assertJsonPath('0.id', $movie->id);
+        $response->assertJsonPath('0.titulo_br', 'The Matrix');
+
+        // 5. Segurança absoluta: garante que a fila de importação ficou intocada
+        Queue::assertNothingPushed();
+    }
 }
