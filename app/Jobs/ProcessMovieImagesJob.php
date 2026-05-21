@@ -20,7 +20,7 @@ class ProcessMovieImagesJob implements ShouldQueue
     public $tries = 3;
     public $backoff = 60;
 
-    public function __construct(protected Movie $movie, protected array $imageUrls) {}
+    public function __construct(public Movie $movie, public array $imageUrls) {}
 
     public function handle(): void
     {

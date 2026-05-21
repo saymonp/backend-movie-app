@@ -6,9 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Models\Tag;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Lista extends Model
 {
+    use HasFactory;
+
     protected $fillable = ['titulo', 'comentario', 'user_id', 'slug', 'idioma', 'publica', 'is_default'];
 
     protected $casts = [

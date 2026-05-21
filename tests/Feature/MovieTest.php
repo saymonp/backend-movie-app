@@ -3,52 +3,90 @@
 namespace Tests\Feature;
 
 use Tests\TestCase;
+use App\Models\Movie;
+use App\Models\Genero;
+use App\Models\Diretor;
+use App\Http\Controllers\MovieController;
+use PHPUnit\Framework\Attributes\CoversClass;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
+#[CoversClass(MovieController::class)]
 class MovieTest extends TestCase
 {
-    public function test_can_process_movie_data_from_fixture()
+    use RefreshDatabase;
+
+    /**
+     * Teste 1: Garante que a listagem padrão traz os filmes paginados e ordenados por data de lançamento.
+     */
+    public function test_pode_listar_todos_os_filmes_com_ordenacao_padrao(): void
     {
-        $this->withoutExceptionHandling();
-        // 1. Carrega o conteúdo do JSON
-        $json = file_get_contents(base_path('tests/Fixtures/movies.json'));
-        $data = json_decode($json, true);
+        // Cria 2 filmes com datas de lançamento diferentes
+        $filmeAntigo = Movie::factory()->create(['release_date' => '2023-01-01']);
+        $filmeNovo = Movie::factory()->create(['release_date' => '2026-01-01']);
 
-        // 2. Simula uma ação com esses dados
-        $response = $this->postJson('/api/movies', $data[1]);
+        $response = $this->getJson('/api/movies');
 
-        $response->dump();
-        // 3. Verifica o resultado
-        $response->assertStatus(201)
-                 ->assertJsonPath('tmdb_id', $data[1]['tmdb_id']);
-                 
+        $response->assertStatus(200)
+            ->assertJsonStructure(['data', 'total', 'per_page'])
+            ->assertJsonCount(2, 'data');
+
+        // Garante que o mais novo veio primeiro (ordenabilidade padrão)
+        $this->assertEquals($filmeNovo->id, $response->json('data.0.id'));
     }
 
-    public function test_can_show_movie()
+    /**
+     * Teste 2: Garante o funcionamento do filtro por ano de lançamento.
+     */
+    public function test_pode_filtrar_filmes_por_ano_especifico(): void
     {
-        // 1. Carrega o conteúdo do JSON
-        $json = file_get_contents(base_path('tests/Fixtures/movies.json'));
-        $data = json_decode($json, true);
+        $filme2024 = Movie::factory()->create(['release_date' => '2024-05-15']);
+        $filme2026 = Movie::factory()->create(['release_date' => '2026-02-20']);
 
-        // 2. Simula uma ação com esses dados
-        $response = $this->postJson('/api/movies', $data[1]);
+        $response = $this->getJson('/api/movies?ano=2026');
 
-        $response->dump();
-        // 3. Verifica o resultado
-        $response->assertStatus(201)
-                 ->assertJsonPath('tmdb_id', $data[1]['tmdb_id']);
-                 
-        $this->withoutExceptionHandling();
-        // 1. Carrega o conteúdo do JSON
-        $json = file_get_contents(base_path('tests/Fixtures/movies.json'));
-        $data = json_decode($json, true);
+        $response->assertStatus(200)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $filme2026->id);
+    }
 
-        // 2. Simula uma ação com esses dados
-        $response = $this->postJson('/api/movies/show/', $data[1]);
+    /**
+     * Teste 3: Testa o filtro relacional (Muitos para Muitos) com Gêneros.
+     */
+    public function test_pode_filtrar_filmes_por_genero_via_array_de_ids(): void
+    {
+        // Cria dois gêneros separados
+        $acao = Genero::factory()->create();
+        $drama = Genero::factory()->create();
 
-        $response->dump();
-        // 3. Verifica o resultado
-        $response->assertStatus(201)
-                 ->assertJsonPath('tmdb_id', $data[1]['tmdb_id']);
-                 
+        // Cria os filmes e vincula os gêneros a eles
+        $filmeAcao = Movie::factory()->create();
+        $filmeAcao->generos()->attach($acao->id);
+
+        $filmeDrama = Movie::factory()->create();
+        $filmeDrama->generos()->attach($drama->id);
+
+        // Passa o array de gêneros na URL: ?generos[]=1
+        $response = $this->getJson("/api/movies?generos[]={$acao->id}");
+
+        $response->assertStatus(200)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $filmeAcao->id);
+    }
+
+    /**
+     * Teste 4: Testa o comportamento da flag booleana de maiores bilheterias.
+     */
+    public function test_pode_ordenar_por_maior_bilheteria(): void
+    {
+        $filmeBaixaBilheteria = Movie::factory()->create(['revenue' => 100000]); // 100k
+        $filmeAltaBilheteria = Movie::factory()->create(['revenue' => 950000000]); // 950M
+
+        // Ativa o booleano ?bilheteria=true
+        $response = $this->getJson('/api/movies?bilheteria=true');
+
+        $response->assertStatus(200);
+        
+        // O de maior bilheteria deve ser o primeiro item do array
+        $this->assertEquals($filmeAltaBilheteria->id, $response->json('data.0.id'));
     }
 }

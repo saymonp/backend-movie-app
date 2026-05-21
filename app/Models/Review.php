@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Review extends Model
 {
+    use HasFactory;
+
     protected $fillable = ['titulo', 'comentario', 'rating', 'user_id', 'movie_id'];
 
     protected $casts = [
@@ -40,7 +42,12 @@ class Review extends Model
 
     public function likes()
     {
-        return $this->belongsToMany(User::class, 'review_like');
+        return $this->belongsToMany(
+            User::class,
+            'review_like',
+            'review_id',
+            'user_id'
+        );
     }
 
     // Método para contar likes

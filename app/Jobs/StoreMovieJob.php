@@ -24,14 +24,14 @@ class StoreMovieJob implements ShouldQueue
      */
     public $tries = 3;
 
-    public function __construct(protected array $data)
+    public function __construct(public array $data)
     {
         //
     }
 
     public function handle(): void
     {
-        $tmdb = new TmdbService();
+        $tmdb = app(TmdbService::class);
         $generos_ids = $tmdb->getMovieGeneros();
 
         // 1. Obter detalhes

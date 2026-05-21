@@ -73,7 +73,12 @@ class User extends Authenticatable
 
     public function likedReviews()
     {
-        return $this->belongsToMany(Review::class, 'review_like');
+        return $this->belongsToMany(
+            Review::class,
+            'review_like',
+            'user_id',
+            'review_id'
+        );
     }
 
     /**

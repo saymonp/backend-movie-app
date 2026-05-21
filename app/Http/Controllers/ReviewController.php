@@ -28,7 +28,7 @@ class ReviewController extends Controller
             ->withExists(['likes as is_liked' => function ($q) use ($userId) {
                 $q->where('user_id', $userId);
             }])
-            // A mágica acontece aqui: só filtra por movie_id se ele for passado
+            // só filtra por movie_id se ele for passado
             ->when($movie_id, function ($q) use ($movie_id) {
                 $q->where('movie_id', $movie_id);
             });
@@ -36,12 +36,6 @@ class ReviewController extends Controller
         // 2. Lógica de Privacidade e Filtro de Usuário (user_only)
         if ($request->boolean('user_only') && $userId) {
             $query->where('user_id', $userId);
-        } else {
-            $query->where(function ($q) use ($userId) {
-                if ($userId) {
-                    $q->orWhere('user_id', $userId);
-                }
-            });
         }
 
         // 3. Ordenação e Paginação
@@ -55,7 +49,7 @@ class ReviewController extends Controller
      */
     public function show($id)
     {
-        $userId = Auth::id();
+        $userId = Auth::guard('sanctum')->id();
         $review = Review::with([
             'user:id,name,avatar',
             'tags:id,nome',
@@ -182,7 +176,8 @@ class ReviewController extends Controller
         $review = Review::findOrFail($reviewId);
 
         // O toggle gerencia a inserção ou remoção na tabela pivot
-        $res = $user->likedReviews()->toggle($review->id);
+        //$res = $user->likedReviews()->toggle($review->id);
+        $res = $review->likes()->toggle($user->id);
 
         $liked = count($res['attached']) > 0;
 
