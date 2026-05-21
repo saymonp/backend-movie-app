@@ -120,7 +120,6 @@ class ReviewTest extends TestCase
     public function test_retorna_is_liked_como_true_se_o_usuario_autenticado_curtiu_a_review_toggle_like(): void
     {
         $userDonoReview = User::factory()->create();
-        dump('dono review', $userDonoReview->id);
         $userLogado = User::factory()->create();
         $userLogado1 = User::factory()->create();
         $review = Review::factory()->create(['user_id' => $userDonoReview->id]);
@@ -142,7 +141,6 @@ class ReviewTest extends TestCase
 
         $response->assertStatus(200);
 
-        $response->dump();
 
         // Como o usuário curtiu, o withExists deve marcar como true
         $response->assertJsonPath('data.0.is_liked', true); // erro retorna false
