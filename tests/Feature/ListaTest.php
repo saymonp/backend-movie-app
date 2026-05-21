@@ -550,4 +550,36 @@ class ListaTest extends TestCase
             'id' => $lista->id
         ]);
     }
+
+    public function test_retorna_is_liked_como_true_se_o_usuario_autenticado_curtiu_a_lista_toggle_like(): void
+    {
+        $userDonoLista = User::factory()->create();
+        dump('dono review', $userDonoLista->id);
+        $userLogado = User::factory()->create();
+        $userLogado1 = User::factory()->create();
+        $lista = Lista::factory()->create(['user_id' => $userDonoLista->id]);
+        
+        // O usuário logado curte a review através do método toggleLike
+        $responseToggleLike = $this->actingAs($userLogado, 'sanctum')->post("api/listas/{$lista->id}/like");
+        $responseToggleLike->assertStatus(200);
+        $responseToggleLike->assertJsonPath('is_liked', true);
+        $responseToggleLike->assertJsonPath('message', "Like adicionado");
+
+        $responseToggleLike1 = $this->actingAs($userLogado1, 'sanctum')->post("api/listas/{$lista->id}/like");
+        $responseToggleLike1->assertStatus(200);
+        $responseToggleLike1->assertJsonPath('is_liked', true);
+        $responseToggleLike1->assertJsonPath('message', "Like adicionado");
+        $responseToggleLike1->assertJsonPath('likes_count', 2);
+        
+        $response = $this->actingAs($userLogado, 'sanctum')
+            ->get('/api/listas');
+
+        $response->assertStatus(200);
+            
+        $response->dump();
+        
+        // Como o usuário curtiu, o withExists deve marcar como true
+        $response->assertJsonPath('data.0.is_liked', true); // erro retorna false
+        $response->assertJsonPath('data.0.likes_count', 2); // erro retorna 0
+    }
 }
