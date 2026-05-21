@@ -44,11 +44,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // Grupo de Reviews dentro do contexto de Filmes
     Route::prefix('movies/{movie_id}')->group(function () {
-        /**
-         * Listar reviews de um filme específico
-         * GET /api/movies/{movie_id}/reviews
-         */
-        Route::get('/reviews', [ReviewController::class, 'index']);
         // /movies/{movie_id}/user-review
         Route::get('/user-review', [ReviewController::class, 'showMovieReview']);
         /**
@@ -60,7 +55,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // Grupo de operações diretas em uma Review
     Route::prefix('reviews')->group(function () {
-        Route::post('/reviews/{id}/like', [ReviewController::class, 'toggleLike']);
+        Route::post('/{id}/like', [ReviewController::class, 'toggleLike']);
         /**
          * Atualizar uma review (Dono ou Admin)
          * PUT ou PATCH /api/reviews/{id}
@@ -102,7 +97,11 @@ Route::middleware('auth:sanctum')->get('/me', function (Request $request) {
     // Aqui você pode carregar as roles e permissões também
     return $request->user()->load('roles');
 });
-
+/**
+ * Listar reviews de um filme específico
+ * GET /api/{movie_id}/reviews
+ */
+Route::get('{movie_id}/reviews', [ReviewController::class, 'index']);
 /**
  * Ver detalhes de uma única review
  * GET /api/reviews/{id}
