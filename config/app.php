@@ -133,4 +133,5 @@ return [
         'password' => env('ADMIN_PASSWORD', 'password'),
     ],
 
+    'frontend_url' => env('FRONTEND_URL'),
 ];

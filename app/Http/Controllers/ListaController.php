@@ -129,7 +129,6 @@ class ListaController extends Controller
             }]);
         }
 
-        Log::info($query->toRawSql());
         // 3. Filtros de Busca (Texto e Tags)
         if ($request->filled('search')) {
             $search = $request->input('search');

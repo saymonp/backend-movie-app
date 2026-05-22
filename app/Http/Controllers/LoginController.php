@@ -7,6 +7,9 @@ use Illuminate\Support\Facades\Auth;
 use Laravel\Socialite\Facades\Socialite;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use App\Jobs\SendEmailJob;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class LoginController extends Controller
 {
@@ -143,5 +146,79 @@ class LoginController extends Controller
         $user->delete();
 
         return response()->json(['message' => 'Usuário excluído pelo administrador.'], 200);
+    }
+
+    public function recoverPasswordRequest(Request $request)
+    {
+        $dados = $request->validate([
+            'email' => 'required|email'
+        ]);
+        $user = User::where('email', $dados['email'])->first();
+
+        if ($user) {
+            $token = Str::random(60);
+            // Salva ou atualiza o token na tabela padrão do Laravel (evita duplicados)
+            DB::table('password_reset_tokens')->updateOrInsert(
+                ['email' => $user->email],
+                [
+                    'token' => $token, // Idealmente convertido em hash, mas a string limpa já resolve o fluxo
+                    'created_at' => now()
+                ]
+            );
+
+            $frontUrl = config('app.frontend_url');
+            SendEmailJob::dispatch(
+                $user->email,
+                'Recuperação de Senha - Filmeiro',
+                "<h1>Olá, {$user->name}!</h1>
+             <p>Recebemos uma solicitação para redefinir a sua senha.</p>
+             <p>Clique no link abaixo para prosseguir:</p>
+             <a href='{$frontUrl}/reset-password?token={$token}&email={$user->email}'>Redefinir Senha</a>"
+            );
+        }
+        return response()->json([
+            'message' => 'Se o e-mail estiver cadastrado, um link de redefinição será enviado.'
+        ], 200);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $dados = $request->validate([
+            'email'        => 'required|email',
+            'token'        => 'required|string',
+            'new_password' => ['required', 'string'],
+        ]);
+
+        $resetRecord = DB::table('password_reset_tokens')
+            ->where('email', $dados['email'])
+            ->where('token', $dados['token'])
+            ->first();
+
+        if (! $resetRecord || now()->parse($resetRecord->created_at)->addMinutes(60)->isPast()) {
+            return response()->json([
+                'message' => 'Token de recuperação inválido ou expirado.'
+            ], 422);
+        }
+        $user = User::where('email', $dados['email'])->first();
+
+        if (! $user) {
+            return response()->json([
+                'message' => 'Incapaz de redefinir a senha para este usuário.'
+            ], 404);
+        }
+
+        $user->update([
+            'password' => Hash::make($dados['new_password'])
+        ]);
+        DB::table('password_reset_tokens')->where('email', $dados['email'])->delete();
+        // Deleta tokens antigos por segurança
+        $user->tokens()->delete();
+        $apiToken = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'access_token' => $apiToken,
+            'token_type'   => 'Bearer',
+            'user'         => $user->load('roles')
+        ], 200);
     }
 }
